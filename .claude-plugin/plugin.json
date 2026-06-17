@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "claire",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Claire is a targeted adversarial-critique plugin for Claude Code. It ships two slash commands \u2014 /claire:challenge, which routes your plan, claim or decision to the right kind of critic, and /claire:blank, which gets a cold outside read from a context-starved advisor \u2014 each backed by a dedicated subagent. Its defining feature is de-priming: before any critic runs, the brief is stripped of the answer you expect and checked by a separate leak-auditor, so the critic genuinely challenges instead of confirming. A PreToolUse gate enforces this \u2014 a critic dispatch passes silently only once the leak-auditor has actually cleared the brief (verified by a receipt a PostToolUse hook writes), not on a self-typed marker. It is deliberately not always-on: nothing fires until you invoke a claire command.",
   "author": {
     "name": "claire-contributors"

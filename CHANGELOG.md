@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-17
+
+### Added
+- **Chat edition** (`chat/`) — a prompt-only custom Agent Skill that brings Claire's de-priming discipline and cold-critic persona to regular Claude chat (claude.ai / the Claude apps), where hooks and separate subagents don't exist. It de-primes in two visible phases within one conversation, and is honest that it's the discipline, not the enforced separation of the plugin. Install via claude.ai → Settings → Skills, or paste into a Project's custom instructions. See `chat/README.md`.
+
 ## [0.2.1] - 2026-06-17
 
 ### Fixed
@@ -42,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/janikithup/Claire/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/janikithup/Claire/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/janikithup/Claire/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/janikithup/Claire/releases/tag/v0.1.0

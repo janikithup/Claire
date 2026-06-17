@@ -94,6 +94,14 @@ git clone https://github.com/janikithup/Claire.git ~/.claude/skills/claire
 
 On Windows, use `"%USERPROFILE%\.claude\skills\claire"` as the target. Restart Claude Code (or open a new session) and `/claire:challenge` and `/claire:blank` are live. Update later with `git -C ~/.claude/skills/claire pull`.
 
+## In regular Claude chat (not Claude Code)
+
+Claire's full machinery is Claude Code only. For regular Claude chat (claude.ai and
+the Claude apps), the [`chat/`](chat/) folder ships a prompt-only **custom Skill**
+that carries her de-priming discipline and cold-critic persona — the practice
+without the enforced separation. See [chat/README.md](chat/README.md) to add it in
+claude.ai → Settings → Skills, or as a Project's custom instructions.
+
 ## Credit where it's due
 
 Claire is not trying to out-compete the adversarial-plugin ecosystem — she came
