@@ -71,7 +71,7 @@ de-priming discipline is what makes her useful well outside code review.
 ## Install
 
 ```
-/plugin marketplace add janikithup/claire
+/plugin marketplace add janikithup/Claire
 /plugin install claire@claire
 ```
 

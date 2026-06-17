@@ -3,7 +3,7 @@
   "name": "claire",
   "owner": {
     "name": "claire-contributors",
-    "url": "https://github.com/janikithup/claire"
+    "url": "https://github.com/janikithup/Claire"
   },
   "plugins": [
     {
@@ -12,7 +12,7 @@
       "defaultEnabled": false,
       "source": {
         "source": "github",
-        "repo": "janikithup/claire"
+        "repo": "janikithup/Claire"
       },
       "version": "0.1.0",
       "tags": [
