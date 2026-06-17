@@ -60,6 +60,12 @@ accident.
   work with no surrounding context and get back the read of someone seeing it
   fresh, with no stake in the prior answer.
 
+- **`/claire:doctor`** — Health- and conflict-check this install. Verifies
+  dependencies and integrity, flags duplicate installs and agent-name clashes with
+  your current workspace, and runs a live self-test confirming the de-priming
+  enforcement is actually firing here (so you know whether strict mode is safe to
+  turn on). Run it after installing or updating.
+
 ## How she differs
 
 A second opinion from the same model, asked neutrally, tends to drift back

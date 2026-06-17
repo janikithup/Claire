@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-17
+
+### Added
+- **`/claire:doctor`** — a health- and conflict-check for a Claire install. Filesystem checks (dependencies, install integrity, **duplicate installs**, agent-name collisions with the current workspace, leftover old tools) via `doctor.sh`, plus a **live self-test** that dispatches the leak-auditor and confirms a receipt is written — i.e. that de-priming enforcement is actually firing on this machine, which tells you whether strict mode is safe to enable here.
+
+### Changed
+- **The de-priming gate now acts only on Claire's own (`claire:`-namespaced) critics**, not on a workspace's same-named local agents. Installing Claire no longer injects de-priming reminders into an unrelated project that happens to have its own `failure-mode-attacker` (etc.), and her skills now dispatch the `claire:`-prefixed agents so she always uses her own version even where a same-named local agent exists. The doctor's live self-test is the per-machine backstop if a harness ever fails to namespace.
+
 ## [0.3.0] - 2026-06-17
 
 ### Added
@@ -47,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/janikithup/Claire/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/janikithup/Claire/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/janikithup/Claire/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/janikithup/Claire/compare/v0.1.0...v0.2.0

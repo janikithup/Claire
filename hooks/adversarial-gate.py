@@ -194,9 +194,18 @@ def main():
     if atype_bare == "brief-leak-auditor":
         return
 
-    is_adv = (atype_bare in ADVERSARIAL_AGENTS) or bool(ADVERSARIAL_PHRASE_RE.search(pl))
+    # Only gate Claire's OWN adversarial agents — match on the NAMESPACED form
+    # (claire:<name>), so a different tool's, or the workspace's own, same-named
+    # local agent (e.g. a project's own failure-mode-attacker) is not swept in.
+    # Plugin dispatches carry the namespaced agent-type; a bare same-named agent is
+    # someone else's. The phrase net stays as the backstop for a missing agent-type.
+    # (If a harness ever fails to namespace Claire's own agents, the gate would not
+    # fire — /claire:doctor's live self-test is the per-machine detector for that.)
+    atype_raw = str(atype).strip()
+    is_claire_adv = atype_bare in ADVERSARIAL_AGENTS and atype_raw.startswith("claire:")
+    is_adv = is_claire_adv or bool(ADVERSARIAL_PHRASE_RE.search(pl))
     if not is_adv:
-        return  # not an adversarial dispatch — silent pass
+        return  # not Claire's adversarial dispatch — silent pass
 
     # The receipt — not the tag — is what certifies de-priming.
     if has_matching_receipt(brief_region(prompt)):

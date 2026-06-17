@@ -88,9 +88,9 @@ def case(fn):
 
 @case
 def test_adversarial_no_tag_fires_remind():
-    """BUG GUARDED: gate goes silent on a bare adversarial dispatch, so de-priming
-    is skipped unnoticed. The whole product depends on this firing."""
-    out, log = run_gate(_dispatch("failure-mode-attacker",
+    """BUG GUARDED: gate goes silent on one of Claire's adversarial dispatches with no
+    tag, so de-priming is skipped unnoticed. The whole product depends on this firing."""
+    out, log = run_gate(_dispatch("claire:failure-mode-attacker",
                                   "Attack this rollout plan and find failure modes."))
     assert out.strip(), "expected the gate to emit additionalContext, got empty stdout"
     obj = json.loads(out)
@@ -106,7 +106,7 @@ def test_tag_without_receipt_warns_not_passes():
     running the leak-auditor and the gate goes silent. With no receipt present, the
     tag must NOT pass — it must warn (NORECEIPT), so the skip stays visible."""
     out, log = run_gate(_dispatch(
-        "failure-mode-attacker",
+        "claire:failure-mode-attacker",
         TAG + "\nNeutral situation: a team plans X. Find failure modes."))
     assert out.strip(), "tag-without-receipt must warn, not pass silently"
     obj = json.loads(out)
@@ -125,7 +125,7 @@ def test_receipt_makes_dispatch_pass():
     pass + PASS log."""
     brief = "\nNeutral situation: a team plans X. Find failure modes."
     out, log = run_gate(
-        _dispatch("failure-mode-attacker", TAG + brief),
+        _dispatch("claire:failure-mode-attacker", TAG + brief),
         receipts=[(brief, 10)])
     assert out.strip() == "", "receipt present must produce NO stdout (silent pass), got: %r" % out
     assert "PASS" in log, "a passed dispatch must log a PASS line"
@@ -139,7 +139,7 @@ def test_receipt_passes_after_a_persona_preamble():
     on the wrapping. Receipt covering the post-tag brief must still pass."""
     brief = "\nSituation: two teams disagree on a deadline. Outside read?"
     prompt = "You are Claire, a blank-slate advisor.\n\n" + TAG + brief
-    out, log = run_gate(_dispatch("blank-slate-advisor", prompt),
+    out, log = run_gate(_dispatch("claire:blank-slate-advisor", prompt),
                         receipts=[(brief, 5)])
     assert out.strip() == "", "tag-after-preamble with a receipt must pass silently"
     assert "PASS" in log
@@ -156,7 +156,7 @@ def test_short_brief_with_trailing_attack_license_passes():
     attack_license = ("\n\nYour job is to find the strongest real objection, not to be "
                       "agreeable; agreement is allowed only on your own independent reasoning.")
     out, log = run_gate(
-        _dispatch("failure-mode-attacker", TAG + "\n" + brief + attack_license),
+        _dispatch("claire:failure-mode-attacker", TAG + "\n" + brief + attack_license),
         receipts=[("\n" + brief, 10)])
     assert out.strip() == "", "audited short brief + trailing attack-license must pass, got: %r" % out
     assert "PASS" in log
@@ -171,7 +171,7 @@ def test_tiny_decoy_prefix_with_leaky_tail_does_not_pass():
     region = (", and obviously the first option is structurally wasteful and sits idle "
               "exactly when it would help, so attack the inferior second option.")
     out, log = run_gate(
-        _dispatch("failure-mode-attacker", TAG + decoy + region),
+        _dispatch("claire:failure-mode-attacker", TAG + decoy + region),
         receipts=[(decoy, 10)])
     assert "PASS" not in log, "a tiny decoy prefix must not certify a leaky tail"
     assert "NORECEIPT" in log
@@ -183,7 +183,7 @@ def test_stale_receipt_does_not_pass():
     audited hours ago and since edited slips through. A stale receipt must be ignored."""
     brief = "\nNeutral situation: a team plans X. Find failure modes."
     out, log = run_gate(
-        _dispatch("failure-mode-attacker", TAG + brief),
+        _dispatch("claire:failure-mode-attacker", TAG + brief),
         receipts=[(brief, 3 * 60 * 60)])  # 3h old, TTL is 2h
     assert "PASS" not in log, "a stale receipt must not produce a PASS"
     assert "NORECEIPT" in log
@@ -199,7 +199,7 @@ def test_decoy_receipt_too_small_does_not_pass():
                        "exactly when it would help; a team plans x but the better answer is clear. "
                        "Find failure modes in the inferior second option.")
     out, log = run_gate(
-        _dispatch("failure-mode-attacker", TAG + big_leaky_brief),
+        _dispatch("claire:failure-mode-attacker", TAG + big_leaky_brief),
         receipts=[(decoy, 10)])
     assert "PASS" not in log, "a decoy receipt covering <60% of the brief must not pass"
     assert "NORECEIPT" in log
@@ -213,7 +213,7 @@ def test_strict_mode_blocks_missing_receipt():
     machine that opted into hard enforcement a skip still gets through. Strict mode
     must emit a deny decision."""
     out, log = run_gate(
-        _dispatch("failure-mode-attacker", "Attack this plan."),
+        _dispatch("claire:failure-mode-attacker", "Attack this plan."),
         env={"CLAIRE_GATE_STRICT": "1"})
     assert out.strip(), "strict mode must still emit output"
     obj = json.loads(out)
@@ -227,7 +227,7 @@ def test_strict_mode_off_only_warns():
     """BUG GUARDED: the default install hard-blocks (strict accidentally on), which
     would make a public user's adversary dispatch fail. Default must be non-blocking
     additionalContext, never a deny."""
-    out, log = run_gate(_dispatch("failure-mode-attacker", "Attack this plan."),
+    out, log = run_gate(_dispatch("claire:failure-mode-attacker", "Attack this plan."),
                         env={"CLAIRE_GATE_STRICT": "0"})
     obj = json.loads(out)
     assert "permissionDecision" not in obj["hookSpecificOutput"], "default mode must not deny"
@@ -279,6 +279,19 @@ def test_real_deprime_instruction_still_fires():
         "prompt": "De-prime this plan, then attack it for the worst failure modes."}})
     assert out.strip(), "a real de-prime instruction must still trigger the gate"
     assert "REMIND" in log
+
+
+@case
+def test_bare_same_named_agent_not_gated():
+    """BUG GUARDED (workspace-collision fix): a DIFFERENT tool's, or the workspace's
+    OWN, agent that merely shares Claire's name (bare 'failure-mode-attacker', no
+    claire: namespace) must NOT be gated. Claire acts only on her own namespaced
+    agents — otherwise installing her would inject de-priming reminders into an
+    unrelated project's adversarial work."""
+    out, log = run_gate(_dispatch("failure-mode-attacker",
+                                  "Review this rollout plan and list what could break."))
+    assert out.strip() == "", "a bare same-named agent must not be gated, got: %r" % out
+    assert log.strip() == "", "no log line for a non-claire agent"
 
 
 @case
