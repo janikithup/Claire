@@ -70,16 +70,13 @@ de-priming discipline is what makes her useful well outside code review.
 
 ## Install
 
+Clone Claire into your Claude Code skills folder — she loads automatically on the next session, no commands needed:
+
 ```
-/plugin marketplace add janikithup/Claire
-/plugin install claire@claire
+git clone https://github.com/janikithup/Claire.git ~/.claude/skills/claire
 ```
 
-Claire installs **disabled by default** — she appears in your "Add plugins"
-panel but stays off until you enable her, per machine, on demand. Nothing runs
-until you turn her on. (Requires a recent Claude Code build for the
-present-but-off install; on older clients the plugin installs enabled, so check
-your version if that matters to you.)
+On Windows, use `"%USERPROFILE%\.claude\skills\claire"` as the target. Restart Claude Code (or open a new session) and `/claire:challenge` and `/claire:blank` are live. Update later with `git -C ~/.claude/skills/claire pull`.
 
 ## Credit where it's due
 
