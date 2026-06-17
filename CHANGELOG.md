@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `.gitattributes` pins LF line endings on `.sh`/`.py` (and all text) so the scripts run on Linux regardless of a checkout machine's git `autocrlf` setting — a seedbox clone had received CRLF-mangled scripts that failed to execute.
+
 ## [0.4.1] - 2026-06-17
 
 ### Changed

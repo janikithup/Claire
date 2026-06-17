@@ -1,0 +1,7 @@
+# Force LF line endings on checkout for every text file, on every platform.
+# A CRLF shell script fails to run on Linux (a seedbox clone hit exactly this), and
+# a CRLF shebang can break too — so pin LF and a checkout machine's git `autocrlf`
+# setting can no longer mangle the scripts.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
