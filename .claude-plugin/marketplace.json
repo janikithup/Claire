@@ -1,5 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claire",
   "owner": {
     "name": "claire-contributors",
     "url": "https://github.com/janikithup/claire"
@@ -14,7 +15,11 @@
         "repo": "janikithup/claire"
       },
       "version": "0.1.0",
-      "tags": ["adversarial", "critique", "reasoning"]
+      "tags": [
+        "adversarial",
+        "critique",
+        "reasoning"
+      ]
     }
   ]
 }
