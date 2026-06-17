@@ -28,6 +28,13 @@ change would let the author's expected answer reach the critic, the change is
 wrong — find another way. When a convenience and the de-priming spine conflict,
 the spine wins, and you say so plainly rather than quietly trimming it.
 
+**Presentation — how the critic is shown, distinct from how she is produced.** The
+assistant that integrates Claire's read may *translate* her (compress, reorder,
+plain-language) but never *outvote* her. Fidelity to her actual words rises with how
+far she diverges from the user's framing: synthesize on agreement, preserve on
+disagreement. This governs presentation only; it never touches the de-priming
+upstream. See `docs/design-principles.md`.
+
 ---
 
 ## How to work

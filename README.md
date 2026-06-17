@@ -108,6 +108,19 @@ that carries her de-priming discipline and cold-critic persona — the practice
 without the enforced separation. See [chat/README.md](chat/README.md) to add it in
 claude.ai → Settings → Skills, or as a Project's custom instructions.
 
+## Where the name comes from
+
+Claire began as a typo. Someone fat-fingered `.claude` as `.claire` one too many
+times, the misspelling stuck, and the critic who lived in that folder got a name. It
+fit — an outsider's name for the outsider in the room.
+
+Her title, **Challenge Officer**, is borrowed in spirit from a real kind of role:
+the person an organisation appoints whose entire job is to push back on a plan
+*before* it hardens into a decision. Not a contrarian, not a critic-for-hire — a
+sanctioned challenger, there to make sure the comfortable answer has actually earned
+its place. That is the posture Claire takes: she is not trying to be right, she is
+trying to make sure you are not wrong for a reason no one said out loud.
+
 ## Credit where it's due
 
 Claire is not trying to out-compete the adversarial-plugin ecosystem — she came

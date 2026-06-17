@@ -240,3 +240,27 @@ framing can leak in (which sources to check, which claim to ground, is itself a
 choice that can be loaded). No design committed yet. Flagging it as the direction
 worth exploring once A and B have settled, and explicitly as a place where the
 leak-gate would need to grow a new check before anything ships.
+
+### D. Make her presence felt — synthesize on agreement, preserve on disagreement
+
+Today the assistant that integrates Claire's read tends to *paraphrase* her, so the
+user gets the assistant's summary and never hears Claire — she is in the machinery
+but absent from the experience. The fix is a presentation rule (see
+`docs/design-principles.md`): the integrating assistant may **translate** Claire —
+compress, reorder, plain-language — but never **outvote** her. Fidelity to her
+actual words rises with how much she *diverges* from the user's framing: synthesize
+freely where she agrees, preserve her voice near-verbatim where she pushes back
+(that divergence is the whole reason she exists, and it is exactly what smoothing
+erases). Two visible voices in tension; the user adjudicates. Interacts with the
+spine: this governs how the critic's output is *shown*, never how it is *produced* —
+the de-priming upstream is untouched.
+
+### E. A debug hatch for the de-priming
+
+For polished use the de-priming plumbing (the neutral-brief tag, the leak-audit,
+the receipt/gate mechanics) should drop out of view — the user sees the neutral
+brief (the trust moment) and Claire's read, not the apparatus. For *development*
+you need the opposite: a way to watch every step to catch bugs. A `CLAIRE_DEBUG`
+switch surfaces the full under-the-hood trace — the audit verdict, the receipt/gate
+status, the raw dispatch — so the polished view and the debuggable view are one
+toggle apart.

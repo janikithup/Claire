@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-17
+
+### Changed
+- Cleaner plugin description — dropped the internal hook/receipt mechanics from the user-facing blurb.
+
+### Added
+- `docs/design-principles.md` — the *why* behind how Claire shows her critic (synthesize on agreement, preserve on disagreement; translate, never outvote) and why the brief gets a separate audit rather than self-certification, captured from findings during the build.
+- A "Where the name comes from" note in the README (the `.claire` typo origin and the Challenge Officer title).
+- ROADMAP items D (make her presence felt) and E (a `CLAIRE_DEBUG` hatch); a presentation rule + pointer in `CLAUDE.md`.
+
 ## [0.4.0] - 2026-06-17
 
 ### Added
@@ -55,7 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/janikithup/Claire/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/janikithup/Claire/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/janikithup/Claire/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/janikithup/Claire/compare/v0.2.0...v0.2.1
