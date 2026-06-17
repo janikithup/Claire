@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-06-17
+
+### Fixed
+- **Migration is now smooth end to end.** When you switch install methods the old registration in `~/.claude/settings.json` points at a path that no longer exists; `/claire:doctor` now (a) reports that registration as *stale* rather than a misleading "OK" (it verifies the path exists), and (b) offers to re-point it on **any** missing-receipt result, not only when the entry is absent. So after migrating clone ↔ marketplace, one `/claire:doctor` re-enables enforcement.
+
 ## [0.4.3] - 2026-06-17
 
 ### Added
@@ -79,7 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/janikithup/Claire/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/janikithup/Claire/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/janikithup/Claire/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/janikithup/Claire/compare/v0.4.0...v0.4.1

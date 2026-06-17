@@ -70,11 +70,26 @@ echo "Receipt enforcement (de-priming gate teeth)"
 # the user settings file it never runs: no receipt is written, the gate can never go
 # silent, and de-priming degrades to an unconditional nag. setup-receipts.sh wires it in.
 SETTINGS="$HOME/.claude/settings.json"
-if [ -f "$SETTINGS" ] && grep -q "record-audit-receipt.py" "$SETTINGS" 2>/dev/null; then
-  ok "receipt writer registered in settings.json — enforcement can fire on this machine"
-else
-  warn "receipt writer NOT registered in settings.json — on Claude Desktop the plugin's PostToolUse hook does not fire, so NO receipt is ever written and the gate becomes an unconditional nag. Run:  bash \"$PLUGIN_ROOT/setup-receipts.sh\"  then restart is not needed. The live /claire:doctor test below confirms it."
-fi
+reg="$(python3 - "$SETTINGS" 2>/dev/null <<'PYEOF'
+import json, os, re, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("none"); sys.exit()
+cmds = [h.get("command", "") for blk in d.get("hooks", {}).get("PostToolUse", [])
+        for h in blk.get("hooks", []) if "record-audit-receipt.py" in h.get("command", "")]
+if not cmds:
+    print("none"); sys.exit()
+m = re.search(r"(\S*record-audit-receipt\.py)", cmds[0])
+p = os.path.expanduser(m.group(1)) if m else ""
+print("ok" if (p and os.path.isfile(p)) else "stale")
+PYEOF
+)"
+case "$reg" in
+  ok)    ok "receipt writer registered in settings.json — enforcement can fire on this machine" ;;
+  stale) warn "receipt writer is registered in settings.json but points at a path that no longer exists — did you switch install methods (clone <-> marketplace)? Re-point it:  bash \"$PLUGIN_ROOT/setup-receipts.sh\"  (or run /claire:doctor, which offers to)." ;;
+  *)     warn "receipt writer NOT registered in settings.json — on Claude Desktop the plugin's PostToolUse hook does not fire, so NO receipt is ever written and the gate becomes an unconditional nag. Run:  bash \"$PLUGIN_ROOT/setup-receipts.sh\"  (or run /claire:doctor, which offers to do it). The live test below confirms." ;;
+esac
 echo ""
 
 echo "Duplicate installs"

@@ -59,9 +59,11 @@ written and the gate can only ever warn. The fix is a one-time registration of t
 receipt writer in `~/.claude/settings.json` (where PostToolUse hooks DO fire), which
 the bundled `setup-receipts.sh` does safely and idempotently.
 
-So if Step 2 produced **no fresh receipt** AND Step 1's "Receipt enforcement" check
-WARNed that it isn't registered: **offer to turn it on for the user — do not make them
-open a terminal.** Ask plainly, e.g. *"Claire's stronger enforcement (the gate going
+So if Step 2 produced **no fresh receipt** — whether Step 1's "Receipt enforcement"
+check said *not registered* OR *registered but pointing at a path that no longer exists*
+(a stale registration after switching install methods) — **offer to turn it on for the
+user; do not make them open a terminal.** (`setup-receipts.sh` registers if missing,
+re-points if stale, and is a no-op if already correct — so it is always safe to run.) Ask plainly, e.g. *"Claire's stronger enforcement (the gate going
 silent only on a real audit) isn't switched on here yet. Want me to enable it? It adds
 one line to your Claude settings file that runs the receipt writer; it's reversible and
 can't hang anything."* On **yes**:
