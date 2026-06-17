@@ -12,8 +12,9 @@ dispatch can do. Run both, then give the user a plain verdict.
 
 Run `adv-status.sh` (at the plugin root — the parent of the `skills/` directory
 this skill lives in) and print its one-line output at the top (e.g.
-`claire v0.4.0 · up to date`). If it reports commits behind origin, note that
-`git pull` updates the plugin.
+`claire v0.4.0 · up to date`). If it reports commits behind origin, note how to update: a clone install updates
+with `git pull`; a marketplace install updates by refreshing the marketplace in the
+plugins panel (or `/plugin marketplace update` on the terminal).
 
 ## Step 1 — Filesystem checks
 
@@ -50,19 +51,43 @@ safe to enable.
    `ls -t "<plugin-root>/hooks/.receipts/"`. A **new** `*.json` file (newer than
    step 1) means the PostToolUse receipt hook fired and recorded the clean audit.
 
+## Step 2.5 — If no receipt appeared, OFFER to turn enforcement on
+
+On the Claude Desktop app, a plugin's PostToolUse hook (the receipt writer) does NOT
+fire — only its PreToolUse hook (the warn-gate) does. So out of the box, no receipt is
+written and the gate can only ever warn. The fix is a one-time registration of the
+receipt writer in `~/.claude/settings.json` (where PostToolUse hooks DO fire), which
+the bundled `setup-receipts.sh` does safely and idempotently.
+
+So if Step 2 produced **no fresh receipt** AND Step 1's "Receipt enforcement" check
+WARNed that it isn't registered: **offer to turn it on for the user — do not make them
+open a terminal.** Ask plainly, e.g. *"Claire's stronger enforcement (the gate going
+silent only on a real audit) isn't switched on here yet. Want me to enable it? It adds
+one line to your Claude settings file that runs the receipt writer; it's reversible and
+can't hang anything."* On **yes**:
+
+1. Run `bash "<plugin-root>/setup-receipts.sh"` and show its one-line result.
+2. Re-run the Step 2 live self-test (dispatch the auditor again, check for a fresh
+   receipt). It now fires mid-session — no restart needed.
+3. Report that enforcement is now live.
+
+On **no**, leave it warn-only and say so — Claire still works, the gate just always
+reminds rather than going silent.
+
 ## Step 3 — Verdict
 
 Tell the user, in plain language:
 
-- **If a fresh receipt appeared** → de-priming enforcement is live on this machine,
-  and **strict mode (`CLAIRE_GATE_STRICT=1`) is safe to enable** if they want hard
-  blocking. Say so.
-- **If no receipt appeared** → the receipt hook isn't writing on this machine
-  (most likely the tool-result payload shape differs from what the hook reads).
-  Claire's gate still **warns** on a skipped audit (it fails safe), so day-to-day
-  use is fine — but **do not enable strict mode here**, because it would hard-block
-  legitimate dispatches that never earn a receipt. Note it as the one thing to look
-  into, and that it does not affect the warn-only default.
+- **If a fresh receipt appeared** (originally, or after enabling in Step 2.5) →
+  de-priming enforcement is live on this machine, and **strict mode
+  (`CLAIRE_GATE_STRICT=1`) is safe to enable** if they want hard blocking. Say so.
+- **If no receipt appeared and the user declined to enable it** → Claire runs in
+  **warn-only** mode: the gate reminds on every critic dispatch but never goes silent,
+  and strict mode must stay OFF (it would hard-block every dispatch). That's a fine
+  default; note that `/claire:doctor` can switch on enforcement whenever they want.
+- **If no receipt appeared even though it IS registered** → something deeper is off
+  (e.g. the receipt writer can't read the verdict on this harness). Flag it as the one
+  thing to look into; the warn-only default is unaffected.
 - Roll up the filesystem FAILs/WARNs from Step 1 into one or two plain sentences
   (e.g. "you have Claire installed twice — keep one", or "your project has its own
   agents sharing Claire's names; that's fine, just informational").

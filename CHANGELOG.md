@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-06-17
+
+### Added
+- **`/claire:doctor` offers to turn on receipt enforcement for you.** On the Desktop app the receipt writer needs a one-time registration in `~/.claude/settings.json` (a plugin's PostToolUse hook doesn't fire there); the doctor now detects when it isn't wired and offers a one-`yes` enable — no terminal. The README now leads with the **marketplace install** (plug-and-play) and points enforcement setup at `/claire:doctor`.
+
+### Changed
+- `setup-receipts.sh` is migration-safe: switching install methods (clone ↔ marketplace) changes the install path, so the script now **re-points** an existing registration at the current install (and clears a stale one) instead of seeing any prior entry and skipping.
+
 ## [0.4.2] - 2026-06-17
 
 ### Fixed
@@ -71,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/janikithup/Claire/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/janikithup/Claire/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/janikithup/Claire/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/janikithup/Claire/compare/v0.3.0...v0.4.0

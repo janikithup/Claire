@@ -101,19 +101,27 @@ whether this machine still needs it.
 
 ## Install
 
-Clone Claire into your Claude Code skills folder — she loads automatically on the next session, no commands needed:
+### Recommended — the plugin marketplace (plug-and-play)
+
+On the **Claude Desktop app**, open the plugins panel, choose **Add marketplace**, and enter:
+
+```
+janikithup/claire-marketplace
+```
+
+Then enable **claire** from the panel. `/claire:challenge` and `/claire:blank` are live on the next session, and updates come from refreshing the marketplace in the panel — no terminal, no git. (On the terminal/CLI the equivalent is `/plugin marketplace add janikithup/claire-marketplace` then `/plugin install claire@claire-marketplace`.)
+
+**Then turn on enforcement — one step, recommended.** Run `/claire:doctor` and say **yes** when it offers to enable the receipt-backed enforcement. Out of the box the gate *warns* you to audit; once enforcement is on, it goes **silent only on a brief that genuinely passed the leak-check** (and strict mode becomes available). `/claire:doctor` wires it for you — nothing to edit by hand. See *Enforcing the de-priming* above for what this buys you.
+
+### Alternative — clone install
+
+Drop Claire straight into your skills folder; she loads automatically on the next session, no commands needed:
 
 ```
 git clone https://github.com/janikithup/Claire.git ~/.claude/skills/claire
 ```
 
-On Windows, use `"%USERPROFILE%\.claude\skills\claire"` as the target. Restart Claude Code (or open a new session) and `/claire:challenge` and `/claire:blank` are live. Update later with `git -C ~/.claude/skills/claire pull`.
-
-On the **Claude Desktop app**, also run this once to turn on receipt-backed enforcement (see *Enforcing the de-priming* above):
-
-```
-bash ~/.claude/skills/claire/setup-receipts.sh
-```
+On Windows, use `"%USERPROFILE%\.claude\skills\claire"` as the target. Restart Claude Code (or open a new session) and `/claire:challenge` and `/claire:blank` are live. Update later with `git -C ~/.claude/skills/claire pull`. Turn on enforcement the same way — run `/claire:doctor` (it offers to wire it), or `bash ~/.claude/skills/claire/setup-receipts.sh` directly.
 
 ## In regular Claude chat (not Claude Code)
 
