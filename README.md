@@ -68,6 +68,22 @@ view. Claire instead pairs a blank slate with a leak-checked, de-primed brief,
 so the disagreement you get is real rather than performative. The same
 de-priming discipline is what makes her useful well outside code review.
 
+## Enforcing the de-priming
+
+The leak-check isn't a polite suggestion the assistant can talk itself out of. A
+built-in gate watches every critic dispatch and stays quiet only once the
+leak-auditor has *actually* cleared that exact brief — proven by a short-lived
+receipt written when the audit passes, not by the assistant claiming it did the
+step. If a brief never passes the auditor in two tries, the assistant is told to
+stop and show you the lean it keeps finding rather than push on regardless.
+
+By default the gate *warns* (it never blocks your work on a public install). If
+you want it to hard-stop a critic that skipped the audit, set the environment
+variable `CLAIRE_GATE_STRICT=1` on that machine — but first run a real
+`/claire:challenge` once and confirm the gate goes quiet on the genuine dispatch
+(i.e. receipts are being written on your setup), so strict mode blocks only true
+skips, not a payload-shape quirk.
+
 ## Install
 
 Clone Claire into your Claude Code skills folder — she loads automatically on the next session, no commands needed:

@@ -1,6 +1,7 @@
 hooks/*.log
 hooks/*.tsv
 hooks/.update-check.ts
+hooks/.receipts/
 __pycache__/
 *.pyc
 .DS_Store
