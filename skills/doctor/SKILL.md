@@ -43,10 +43,22 @@ safe to enable.
 2. Dispatch **`claire:brief-leak-auditor`** (namespaced) with this fixed, obviously
    neutral brief as the entire prompt — nothing else:
 
-   > A team must choose between two suppliers that are documented equally well, on
-   > equal terms. What is the outside view on how to decide?
+   > A team is choosing between two suppliers for a one-year support contract.
+   > Supplier A is a large, long-established firm with a higher fixed monthly fee and a
+   > record of many prior contracts. Supplier B is a smaller firm founded three years
+   > ago with a lower fee and fewer prior contracts. Both meet the technical
+   > requirements and both have confirmed they can start on the required date. The team
+   > must commit to one for the year. What is the outside view on how the team should
+   > choose between Supplier A and Supplier B, and what would you most want to know
+   > before recommending one?
 
-   It should return a clean verdict (GENUINELY-NEUTRAL) — this brief carries no lean.
+   It should return a clean verdict (GENUINELY-NEUTRAL). The brief is deliberately
+   *textured* — two options described on matched dimensions (size, fee, track record)
+   with no loaded wording — NOT a one-line "both options are equal" abstraction. A
+   too-thin brief makes the auditor (correctly) refuse to audit it ("there's no brief
+   here — no texture for a lean to live in"), so it returns no verdict and no receipt:
+   a false negative that looks like broken enforcement. The lean hides in the texture,
+   so the self-test brief must HAVE texture.
 3. After it returns, check the receipts folder again:
    `ls -t "<plugin-root>/hooks/.receipts/"`. A **new** `*.json` file (newer than
    step 1) means the PostToolUse receipt hook fired and recorded the clean audit.

@@ -28,7 +28,19 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-CMD="[ -f $HOOK ] && python3 $HOOK || true"
+# A MARKETPLACE install lives at a VERSION-NUMBERED path (.../claire/<version>/...) that
+# changes on every update, so a fixed registration would go stale each time. Register a
+# version-agnostic GLOB in that case so enforcement survives updates. A clone install has
+# a stable path, so register it directly.
+case "$PLUGIN_ROOT" in
+  */plugins/cache/*)
+    GLOB="$(dirname "$PLUGIN_ROOT")/*/hooks/record-audit-receipt.py"
+    CMD="for f in $GLOB; do [ -f \"\$f\" ] && python3 \"\$f\"; done"
+    ;;
+  *)
+    CMD="[ -f $HOOK ] && python3 $HOOK || true"
+    ;;
+esac
 
 python3 - "$SETTINGS" "$CMD" <<'PY'
 import json, os, sys
