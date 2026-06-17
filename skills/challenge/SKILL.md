@@ -37,6 +37,7 @@ Write the adversary's brief against this checklist:
 - [ ] **Strip your rationale and your expected answer.** Write what the situation IS, not what you concluded.
 - [ ] **State every live option fairly.** Each gets a neutral factual description — not a framing that leans toward your preferred one. Omitting your conclusion is not enough; a "balanced" brief that still tilts still primes.
 - [ ] **De-jargon.** Replace every project / workspace shortform with plain language an outsider reads cold. No rule names, skill names, internal labels.
+- [ ] **Strip authorship signals.** Don't reveal that you (or whoever is asking) built or authored the thing under review — present it as found or third-party. A reviewer who can tell the author is the one asking softens the critique no matter how neutral the wording is; intimate "here's exactly how it works" detail leaks authorship just as a stated opinion would. (Surfaced 2026-06-17 when Claire's own leak-auditor passed a review brief as neutral but flagged the residual authorship-leak.)
 - [ ] **Situation first.** Present the facts before any question or claim, so the adversary forms its own read before it sees what it is asked to react to.
 - [ ] **Demand-characteristics branch.** If the dispatch is testing whether a specific behaviour fires, run `probe-auditor` on the brief FIRST (pass the prompt, the capability tested, and the expected-if-fired output), then dispatch the de-primed version.
 

@@ -15,11 +15,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install pytest
-
       - name: Run unit tests
-        run: pytest tests/ -v
+        run: python3 tests/unit/_runner.py
 
   validate-manifests:
     runs-on: ubuntu-latest
@@ -31,20 +28,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install jsonschema
-        run: pip install jsonschema requests
-
-      - name: Validate plugin.json and marketplace.json parse as JSON
+      - name: Validate plugin.json parses, and marketplace.json is absent by design
         run: |
           python - <<'EOF'
-          import json, sys
+          import json, os, sys
 
-          for path in [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"]:
-              try:
-                  with open(path) as f:
-                      data = json.load(f)
-                  print(f"OK: {path}")
-              except Exception as e:
-                  print(f"FAIL: {path} — {e}", file=sys.stderr)
-                  sys.exit(1)
+          # plugin.json must parse.
+          try:
+              with open(".claude-plugin/plugin.json") as f:
+                  json.load(f)
+              print("OK: .claude-plugin/plugin.json parses")
+          except Exception as e:
+              print(f"FAIL: .claude-plugin/plugin.json — {e}", file=sys.stderr)
+              sys.exit(1)
+
+          # marketplace.json must NOT exist: a marketplace manifest beside plugin.json
+          # makes the skills-directory loader treat the folder as a marketplace, so
+          # Claire's commands never register on the git-clone install path.
+          if os.path.exists(".claude-plugin/marketplace.json"):
+              print("FAIL: .claude-plugin/marketplace.json must not exist (breaks the "
+                    "clone-into-skills-dir install)", file=sys.stderr)
+              sys.exit(1)
+          print("OK: no marketplace.json present (correct for the clone install)")
           EOF

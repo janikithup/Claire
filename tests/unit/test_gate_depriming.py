@@ -247,6 +247,41 @@ def test_namespaced_agent_name_matches():
 
 
 @case
+def test_leak_auditor_is_never_gated():
+    """BUG GUARDED (observed live 2026-06-17): the gate fired on brief-leak-auditor
+    itself — the de-priming CHECKER — because its brief quoted '[DEPRIMED-BRIEF]' and
+    the word 'deprimed', tripping the phrase backstop. The checker must NEVER be gated,
+    regardless of what its brief quotes."""
+    out, log = run_gate(_dispatch(
+        "claire:brief-leak-auditor",
+        "Judge this brief. It quotes the [DEPRIMED-BRIEF] tag and discusses the deprimed text."))
+    assert out.strip() == "", "the leak-auditor must never be gated, got: %r" % out
+    assert log.strip() == "", "no log line for the checker"
+
+
+@case
+def test_deprimed_substring_does_not_false_trigger():
+    """BUG GUARDED: 'deprime' matched inside 'deprimed', so an ordinary dispatch that
+    merely discusses de-priming or quotes the tag got falsely flagged. A non-adversarial
+    agent whose prompt contains 'deprimed' must pass silently."""
+    out, log = run_gate(_dispatch(
+        "general-purpose",
+        "Summarise how the deprimed brief flows through the [DEPRIMED-BRIEF] pipeline."))
+    assert out.strip() == "", "a 'deprimed' mention must not trip the gate, got: %r" % out
+    assert log.strip() == "", "no log line for a non-adversarial deprimed-mention dispatch"
+
+
+@case
+def test_real_deprime_instruction_still_fires():
+    """BUG GUARDED: tightening the word-match must not kill the genuine backstop — an
+    actual 'de-prime this and attack it' instruction with no agent-type must still fire."""
+    out, log = run_gate({"tool_input": {
+        "prompt": "De-prime this plan, then attack it for the worst failure modes."}})
+    assert out.strip(), "a real de-prime instruction must still trigger the gate"
+    assert "REMIND" in log
+
+
+@case
 def test_non_adversarial_dispatch_silent():
     """BUG GUARDED: the gate nags on ordinary subagent dispatches, becoming ambient
     noise the user tunes out. A routine dispatch must be fully silent."""

@@ -44,6 +44,12 @@ ADVERSARIAL_PHRASES = (
     "devil's advocate", "steel-man", "steelman", "de-prime", "deprime",
     "blank-slate advisor",
 )
+# Match phrases only at WORD boundaries, so "deprime" does not fire inside
+# "deprimed" (e.g. a brief that quotes the [DEPRIMED-BRIEF] tag or discusses
+# de-priming) — that false trigger is exactly what gated the leak-auditor itself.
+ADVERSARIAL_PHRASE_RE = re.compile(
+    r"(?<![a-z])(?:" + "|".join(re.escape(p) for p in ADVERSARIAL_PHRASES) + r")(?![a-z])"
+)
 
 TAG = "[DEPRIMED-BRIEF]"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -179,7 +185,16 @@ def main():
     pl = prompt.lower()
 
     atype_bare = str(atype).strip().split(":")[-1]
-    is_adv = (atype_bare in ADVERSARIAL_AGENTS) or any(p in pl for p in ADVERSARIAL_PHRASES)
+
+    # NEVER gate the de-priming CHECKER itself. brief-leak-auditor reads a brief to
+    # judge its neutrality — gating it would circularly demand a receipt on the very
+    # tool that earns receipts, and its brief routinely quotes the tag and the word
+    # "de-priming", which would otherwise trip the phrase backstop. This name check
+    # is authoritative over the phrase net below.
+    if atype_bare == "brief-leak-auditor":
+        return
+
+    is_adv = (atype_bare in ADVERSARIAL_AGENTS) or bool(ADVERSARIAL_PHRASE_RE.search(pl))
     if not is_adv:
         return  # not an adversarial dispatch — silent pass
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-17
+
+### Fixed
+- **The gate no longer fires on the leak-auditor itself.** A brief that quoted the `[DEPRIMED-BRIEF]` tag or used the word "deprimed" tripped the backstop word-match (`deprime` matched inside `deprimed`), so dispatching `brief-leak-auditor` — the de-priming *checker* — drew a false warning. The checker is now never gated, and the phrase backstop matches only at word boundaries, so ordinary discussion of de-priming no longer false-triggers.
+
+### Added
+- **Strip-authorship-signals** step in the de-priming checklist (`/claire:challenge`): don't reveal that the asker built the thing under review — a reviewer who can tell the author is asking softens the critique regardless of wording. Surfaced by Claire's own leak-auditor, which passed a review brief as neutral but flagged the residual authorship-leak.
+- Regression tests for the leak-auditor-never-gated and word-boundary cases.
+
+### Changed
+- CI: validate only `plugin.json` (and assert `marketplace.json` stays absent, as the clone-install requires); run the project's own test runner instead of pytest. Fixes the red `validate-manifests` job left over from removing `marketplace.json`.
+
 ## [0.2.0] - 2026-06-17
 
 ### Changed
@@ -30,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/janikithup/Claire/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/janikithup/Claire/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/janikithup/Claire/releases/tag/v0.1.0
