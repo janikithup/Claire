@@ -64,6 +64,19 @@ else
 fi
 echo ""
 
+echo "Receipt enforcement (de-priming gate teeth)"
+# On the Claude Desktop app, a plugin's PostToolUse hook does NOT fire (its PreToolUse
+# hook does). Claire's receipt writer is PostToolUse, so unless it is ALSO registered in
+# the user settings file it never runs: no receipt is written, the gate can never go
+# silent, and de-priming degrades to an unconditional nag. setup-receipts.sh wires it in.
+SETTINGS="$HOME/.claude/settings.json"
+if [ -f "$SETTINGS" ] && grep -q "record-audit-receipt.py" "$SETTINGS" 2>/dev/null; then
+  ok "receipt writer registered in settings.json — enforcement can fire on this machine"
+else
+  warn "receipt writer NOT registered in settings.json — on Claude Desktop the plugin's PostToolUse hook does not fire, so NO receipt is ever written and the gate becomes an unconditional nag. Run:  bash \"$PLUGIN_ROOT/setup-receipts.sh\"  then restart is not needed. The live /claire:doctor test below confirms it."
+fi
+echo ""
+
 echo "Duplicate installs"
 dup=0
 if [ -d "$HOME/.claude" ]; then

@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-17
+
 ### Fixed
+- **Receipt-backed de-priming enforcement now actually fires on the Claude Desktop app.** The receipt writer is a PostToolUse hook, and a plugin's PostToolUse hooks do not fire on Desktop (its PreToolUse hooks do) — so no receipt was ever written, the gate could never go silent, and de-priming degraded to an unconditional nag on every dispatch. Three fixes land together: (1) a new **`setup-receipts.sh`** registers the receipt writer in `~/.claude/settings.json`, where PostToolUse hooks *do* fire — run it once per machine; the registration is uninstall-safe (a missing script becomes a no-op, never a hang) and idempotent. (2) The clean-vs-leaning verdict is now read **by position**: the leak-auditor discusses leans even when it passes (e.g. "I considered a faint LEAN-One but am declining … GENUINELY-NEUTRAL"), so a clean pass is recognised by `GENUINELY-NEUTRAL` appearing *before* any `LEAN-<option>` token, instead of scanning for the word "lean" anywhere and wrongly suppressing the receipt. (3) Both hooks **strip the harness-appended "[standing invitation]" coda** before fingerprinting — it is added to a subagent prompt between the gate's read and the receipt writer's read, and would otherwise make the two fingerprints never match. `/claire:doctor` now checks the settings.json registration. Verified end-to-end live.
 - `.gitattributes` pins LF line endings on `.sh`/`.py` (and all text) so the scripts run on Linux regardless of a checkout machine's git `autocrlf` setting — a seedbox clone had received CRLF-mangled scripts that failed to execute.
 
 ## [0.4.1] - 2026-06-17
@@ -68,7 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/janikithup/Claire/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/janikithup/Claire/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/janikithup/Claire/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/janikithup/Claire/compare/v0.2.1...v0.3.0

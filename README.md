@@ -90,6 +90,15 @@ variable `CLAIRE_GATE_STRICT=1` on that machine — but first run a real
 (i.e. receipts are being written on your setup), so strict mode blocks only true
 skips, not a payload-shape quirk.
 
+**On the Claude Desktop app, run `setup-receipts.sh` once per machine.** Desktop
+does not fire a plugin's *after-tool* hooks — and writing the receipt is an
+after-tool hook — so without this step no receipt is ever written, the gate can
+only ever warn (it never goes quiet), and strict mode would block everything. The
+script wires the receipt writer into your `~/.claude/settings.json`, where those
+hooks *do* fire; it is safe to re-run, idempotent, and undoes cleanly if you remove
+Claire (a missing script becomes a no-op, never a hang). `/claire:doctor` tells you
+whether this machine still needs it.
+
 ## Install
 
 Clone Claire into your Claude Code skills folder — she loads automatically on the next session, no commands needed:
@@ -99,6 +108,12 @@ git clone https://github.com/janikithup/Claire.git ~/.claude/skills/claire
 ```
 
 On Windows, use `"%USERPROFILE%\.claude\skills\claire"` as the target. Restart Claude Code (or open a new session) and `/claire:challenge` and `/claire:blank` are live. Update later with `git -C ~/.claude/skills/claire pull`.
+
+On the **Claude Desktop app**, also run this once to turn on receipt-backed enforcement (see *Enforcing the de-priming* above):
+
+```
+bash ~/.claude/skills/claire/setup-receipts.sh
+```
 
 ## In regular Claude chat (not Claude Code)
 

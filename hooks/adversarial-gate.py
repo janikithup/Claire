@@ -80,12 +80,29 @@ def normalise(text):
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
 
+# See record-audit-receipt.py: the harness appends a standing-invitation coda to the
+# subagent prompt AFTER this PreToolUse gate reads it but BEFORE the PostToolUse
+# receipt writer does, so the receipt fingerprints brief+coda while this gate sees
+# brief-only. Both hooks cut at the coda marker so each fingerprints the brief ALONE,
+# whichever stage the harness happens to inject at. No-op when no coda is present.
+CODA_MARKERS = ("[standing invitation]",)
+
+
+def strip_coda(norm_text):
+    cut = len(norm_text)
+    for m in CODA_MARKERS:
+        i = norm_text.find(m)
+        if i != -1:
+            cut = min(cut, i)
+    return norm_text[:cut].strip()
+
+
 def brief_region(prompt):
     """The portion of the critic prompt that should BE the audited brief: everything
     after the last tag. If there is no tag, the whole prompt is the candidate region."""
     idx = prompt.rfind(TAG)
     region = prompt[idx + len(TAG):] if idx != -1 else prompt
-    return normalise(region)
+    return strip_coda(normalise(region))
 
 
 def has_matching_receipt(region_norm):

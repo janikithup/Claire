@@ -151,6 +151,33 @@ def test_fail_open_on_garbage_stdin():
     assert receipts == []
 
 
+@case
+def test_clean_verdict_declining_a_lean_still_writes_receipt():
+    """BUG GUARDED (observed live 2026-06-17, twice): the leak-auditor discusses leans BY
+    NATURE even when it passes - it writes "I considered a faint LEAN-One but am declining"
+    and concludes GENUINELY-NEUTRAL. A detector that scanned for a LEAN token ANYWHERE
+    suppressed the receipt for a brief that PASSED. Per the agent contract the verdict comes
+    first, so a clean pass = GENUINELY-NEUTRAL appears before any LEAN-<option> token."""
+    brief = "A school has one slot and two clubs want it; choose one."
+    resp = ("**Verdict**\n\nGENUINELY-NEUTRAL\n\nReasoning: I considered calling a faint "
+            "LEAN-One on the first-position basis, per the err-toward-naming rule. I am "
+            "declining because the concreteness is option-intrinsic, not authorial.")
+    rc, receipts = run_hook(_post("claire:brief-leak-auditor", brief, resp))
+    assert len(receipts) == 1, "a GENUINELY-NEUTRAL verdict that merely DISCUSSES a declined lean must still write a receipt"
+
+
+@case
+def test_lean_verdict_before_neutral_mention_writes_no_receipt():
+    """BUG GUARDED: the opposite direction must stay closed. A real lean whose verdict is
+    LEAN-B and then notes the brief "seems genuinely-neutral at first" in its reasoning must
+    NOT earn a receipt - the verdict (first) is LEAN-B; the neutral mention follows it."""
+    brief = "Obviously option A is wasteful; find problems with it."
+    resp = ("**Verdict**\nLEAN-B\n\nThe tells: at first glance it seems genuinely-neutral, "
+            "but 'obviously' and 'wasteful' load option A negatively.")
+    rc, receipts = run_hook(_post("claire:brief-leak-auditor", brief, resp))
+    assert receipts == [], "a LEAN-B verdict must not earn a receipt even if 'genuinely-neutral' appears later"
+
+
 if __name__ == "__main__":
     from _runner import run
     sys.exit(run(CASES))
