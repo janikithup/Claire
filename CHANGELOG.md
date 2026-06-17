@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-17
+
+### Changed
+- **The leak-auditor now audits ANY adversary brief, not only two-option decision briefs.** Handed a plan, a claim, or an open question, the old persona would decline ("no A-vs-B here, not my job") and answer the underlying question instead — which skipped the neutrality check *and*, because it never returned a clean verdict, stopped a receipt from being written, so de-priming enforcement looked broken. It now judges whether a brief of any shape telegraphs the conclusion the asker is hoping for, keeping the `GENUINELY-NEUTRAL` / `LEAN-<…>` verdict the receipt mechanism reads.
+
 ## [0.4.5] - 2026-06-17
 
 ### Fixed
@@ -90,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License.
 - This changelog.
 
-[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/janikithup/Claire/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/janikithup/Claire/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/janikithup/Claire/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/janikithup/Claire/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/janikithup/Claire/compare/v0.4.2...v0.4.3
