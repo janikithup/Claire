@@ -1,0 +1,6 @@
+hooks/*.log
+hooks/*.tsv
+hooks/.update-check.ts
+__pycache__/
+*.pyc
+.DS_Store

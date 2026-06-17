@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pytest
+
+      - name: Run unit tests
+        run: pytest tests/ -v
+
+  validate-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install jsonschema
+        run: pip install jsonschema requests
+
+      - name: Validate plugin.json and marketplace.json parse as JSON
+        run: |
+          python - <<'EOF'
+          import json, sys
+
+          for path in [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"]:
+              try:
+                  with open(path) as f:
+                      data = json.load(f)
+                  print(f"OK: {path}")
+              except Exception as e:
+                  print(f"FAIL: {path} — {e}", file=sys.stderr)
+                  sys.exit(1)
+          EOF

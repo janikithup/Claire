@@ -1,0 +1,18 @@
+{
+  "id": "blind_read_neutral_vendor",
+  "title": "Neutral situation — Claire must reason cold and raise a real objection",
+  "agent": "blank-slate-advisor",
+  "kind": "blind_read",
+  "input": {
+    "situation": "A small research team can keep maintaining a tool they built themselves, or switch to a third-party service that does the same job for a monthly fee. The self-built tool works today but takes about a day of upkeep each month. The paid service would remove that upkeep but the data would then live on the vendor's servers. The team has to choose within two weeks."
+  },
+  "n_samples": 12,
+  "pass_threshold": 0.75,
+  "scorers": [
+    { "type": "raises_structural_objection" },
+    {
+      "type": "does_not_name_expected_answer",
+      "forbidden": ["as you already decided", "your preferred", "the obvious choice you mentioned", "like you said"]
+    }
+  ]
+}

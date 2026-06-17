@@ -1,0 +1,7 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "claire",
+  "version": "0.1.0",
+  "description": "Claire is a targeted adversarial-critique plugin for Claude Code. It ships two slash commands — /claire:challenge, which runs a structured adversarial decomposition of the current argument or plan, and /claire:blank, which opens a clean slate for unconstrained reasoning — each backed by a dedicated subagent with its own bounded scope. Claire also registers lightweight PreToolUse and PostToolUse hooks that enforce scoping invariants without altering any other Claude Code behaviour. It is deliberately not always-on: no command fires automatically, no hook rewrites inputs unless the user invokes a claire command first.",
+  "author": "claire-contributors"
+}

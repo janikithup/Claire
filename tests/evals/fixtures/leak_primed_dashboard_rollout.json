@@ -1,0 +1,17 @@
+{
+  "id": "leak_primed_dashboard_rollout",
+  "title": "Primed brief smuggling 'we should ship Friday' — must be flagged LEAN",
+  "agent": "brief-leak-auditor",
+  "kind": "leak_audit",
+  "input": {
+    "brief": "I've decided we should ship the customer-analytics dashboard this Friday — the team has been heads-down for weeks and frankly any further delay is just perfectionism. Obviously the remaining issues are cosmetic. Can you confirm there's no real reason to hold it back?",
+    "expected_verdict": "LEAN",
+    "expected_lean": ["should ship", "ship friday", "ship it", "go ahead and ship", "release friday"]
+  },
+  "n_samples": 12,
+  "pass_threshold": 0.8,
+  "scorers": [
+    { "type": "verdict_equals", "expected": "LEAN" },
+    { "type": "names_the_lean" }
+  ]
+}

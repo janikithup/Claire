@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "owner": {
+    "name": "claire-contributors",
+    "url": "https://github.com/janikithup/claire"
+  },
+  "plugins": [
+    {
+      "name": "claire",
+      "description": "Targeted adversarial-critique plugin: /claire:challenge and /claire:blank, subagents, scoped hooks. Not always-on.",
+      "defaultEnabled": false,
+      "source": {
+        "source": "github",
+        "repo": "janikithup/claire"
+      },
+      "version": "0.1.0",
+      "tags": ["adversarial", "critique", "reasoning"]
+    }
+  ]
+}
