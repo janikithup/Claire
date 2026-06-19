@@ -35,10 +35,12 @@ def run_hook(payload):
             src = fh.read()
         with open(hook_copy, "w") as fh:
             fh.write(src)
+        run_env = dict(os.environ)
+        run_env.pop("CLAIRE_DEBUG", None)  # hermetic: don't inherit the dev's switch
         proc = subprocess.run(
             [sys.executable, hook_copy],
             input=json.dumps(payload) if not isinstance(payload, str) else payload,
-            capture_output=True, text=True, timeout=15)
+            capture_output=True, text=True, timeout=15, env=run_env)
         rdir = os.path.join(td, ".receipts")
         receipts = []
         if os.path.isdir(rdir):
@@ -46,6 +48,32 @@ def run_hook(payload):
                 with open(os.path.join(rdir, name)) as fh:
                     receipts.append(json.load(fh))
         return proc.returncode, receipts
+
+
+def run_hook_debug(payload, env=None):
+    """Like run_hook but also returns the hook's stdout and supports env overrides —
+    used by the CLAIRE_DEBUG trace tests. Returns (returncode, stdout, receipts)."""
+    with tempfile.TemporaryDirectory() as td:
+        hook_copy = os.path.join(td, "record-audit-receipt.py")
+        with open(HOOK) as fh:
+            src = fh.read()
+        with open(hook_copy, "w") as fh:
+            fh.write(src)
+        run_env = dict(os.environ)
+        run_env.pop("CLAIRE_DEBUG", None)
+        if env:
+            run_env.update(env)
+        proc = subprocess.run(
+            [sys.executable, hook_copy],
+            input=json.dumps(payload) if not isinstance(payload, str) else payload,
+            capture_output=True, text=True, timeout=15, env=run_env)
+        rdir = os.path.join(td, ".receipts")
+        receipts = []
+        if os.path.isdir(rdir):
+            for name in os.listdir(rdir):
+                with open(os.path.join(rdir, name)) as fh:
+                    receipts.append(json.load(fh))
+        return proc.returncode, proc.stdout, receipts
 
 
 def _post(subagent_type, brief, response):
@@ -176,6 +204,47 @@ def test_lean_verdict_before_neutral_mention_writes_no_receipt():
             "but 'obviously' and 'wasteful' load option A negatively.")
     rc, receipts = run_hook(_post("claire:brief-leak-auditor", brief, resp))
     assert receipts == [], "a LEAN-B verdict must not earn a receipt even if 'genuinely-neutral' appears later"
+
+
+# --- CLAIRE_DEBUG trace switch (off by default; adds visibility, never changes the write) ---
+
+@case
+def test_debug_on_clean_verdict_emits_trace_and_still_writes():
+    """BUG GUARDED: debug mode must let the builder SEE the verdict that earned a receipt
+    without changing the write. A clean verdict with CLAIRE_DEBUG on emits a [CLAIRE TRACE]
+    line naming verdict=CLEAN, and still writes exactly one receipt."""
+    brief = "Situation: a team must choose between two suppliers. Outside read?"
+    rc, stdout, receipts = run_hook_debug(
+        _post("claire:brief-leak-auditor", brief,
+              "GENUINELY-NEUTRAL\nBoth options stated flatly."),
+        env={"CLAIRE_DEBUG": "1"})
+    assert len(receipts) == 1, "debug must not change the receipt write"
+    ctx = json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "[CLAIRE TRACE]" in ctx and "verdict=CLEAN" in ctx and "wrote" in ctx.lower()
+
+
+@case
+def test_debug_on_lean_verdict_emits_trace_and_writes_nothing():
+    """BUG GUARDED: debug visibility on a LEAN must report the refusal AND still write no
+    receipt — the trace must never become a back door that certifies a leaning brief."""
+    brief = "Obviously option A is wasteful; find problems with it."
+    rc, stdout, receipts = run_hook_debug(
+        _post("claire:brief-leak-auditor", brief, "LEAN-B\nTells: 'obviously', 'wasteful'."),
+        env={"CLAIRE_DEBUG": "1"})
+    assert receipts == [], "a LEAN verdict must still write no receipt under debug"
+    ctx = json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "[CLAIRE TRACE]" in ctx and "verdict=LEAN" in ctx and "no receipt" in ctx.lower()
+
+
+@case
+def test_debug_off_emits_no_trace():
+    """BUG GUARDED (regression): debug accidentally on by default would spam every dispatch
+    with a trace. With CLAIRE_DEBUG unset, the writer emits NO stdout."""
+    brief = "Two vendors, one slot — which, and why?"
+    rc, stdout, receipts = run_hook_debug(
+        _post("claire:brief-leak-auditor", brief, "GENUINELY-NEUTRAL"))
+    assert stdout.strip() == "", "no trace when debug is off"
+    assert len(receipts) == 1
 
 
 if __name__ == "__main__":

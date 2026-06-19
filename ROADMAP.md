@@ -257,6 +257,10 @@ the de-priming upstream is untouched.
 
 ### E. A debug hatch for the de-priming
 
+**Status: shipped in 0.5.0** (`CLAIRE_DEBUG`). Built first, deliberately: it is the
+instrument that lets each later item (A–D) be verified spine-safe — you can watch the
+de-priming work, brief next to verdict — rather than bolting features onto a sealed box.
+
 For polished use the de-priming plumbing (the neutral-brief tag, the leak-audit,
 the receipt/gate mechanics) should drop out of view — the user sees the neutral
 brief (the trust moment) and Claire's read, not the apparatus. For *development*
@@ -264,3 +268,44 @@ you need the opposite: a way to watch every step to catch bugs. A `CLAIRE_DEBUG`
 switch surfaces the full under-the-hood trace — the audit verdict, the receipt/gate
 status, the raw dispatch — so the polished view and the debuggable view are one
 toggle apart.
+
+---
+
+## Known install constraints
+
+Where Claire's enforcement can and can't run, and the migration paths between
+install methods.
+
+- **Enforcement is local/Desktop only.** The de-priming *gate* and the receipt
+  writer are hooks. A remote or headless install (an SSH-only box, a seedbox, a
+  CI runner) drops the `hooks/` layer entirely, so the gate and receipts cannot
+  run there — Claire's prompt-level discipline still applies, but the *enforced*
+  separation does not. This is a known dead-end, not a bug. **Future direction:** a
+  hookless *degraded mode* that still surfaces the leak-check inline, so a headless
+  install gets the discipline even where the enforcement can't follow.
+- **Migrating clone ↔ marketplace.** If both a clone install
+  (`~/.claude/skills/claire`) and a marketplace install are present on one machine,
+  they double up. Remove the clone, restart, and run `/claire:doctor` — it
+  re-points enforcement at the surviving install via a version-agnostic glob, so
+  the wiring then survives future marketplace updates. `/claire:doctor` also tells
+  you which install method a machine is on and whether enforcement is wired.
+
+## Considered and parked
+
+### Always-on (auto-firing) Claire
+
+Explored making Claire fire *automatically* at a decision point rather than only
+when she is called, and deliberately **parked it** — she stays an on-demand tool
+you invoke at your discretion. The findings, kept in case this is revisited:
+
+- **Source-grounded review is the more valuable track.** Giving a critic
+  read-access to the *primary sources* (not the author's framing of them) is a
+  separate, worthwhile direction — and the one item C above is already circling.
+- **A Stop hook can't prepend a review before you act.** It fires *after* a turn
+  is generated and cannot rewrite it, so "auto-review the plan before the user
+  sees it" is not buildable as a Stop hook.
+- **The only clean auto-fire triggers are narrow.** An explicit acceptance-language
+  message from the user ("yes, build it") is observable and could trigger a
+  pre-commit critique; a `PreToolUse` guard could fire on irreversible actions. The
+  open-ended "we drifted into a decision in free conversation" case has no clean,
+  observable trigger — which is why always-on was parked rather than built.

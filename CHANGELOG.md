@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-19
+
+### Added
+- **A developer trace switch — `CLAIRE_DEBUG`.** Set `CLAIRE_DEBUG=1` and every Claire dispatch surfaces a one-line under-the-hood trace: the gate's decision and whether a receipt matched (from `adversarial-gate.py`), plus the leak-audit verdict and whether a receipt was written (from `record-audit-receipt.py`). The `/claire:challenge` and `/claire:blank` skills render these as a `TRACE` section after Claire's read. It is **off by default**, reaches no normal user, and is pure visibility — it never changes how a brief is de-primed, which decision the gate takes, or whether a receipt is written (guarded by unit tests, including a strict-mode-still-blocks-under-debug case). The point: building on Claire's de-priming layer, you can finally watch it work — see the brief next to the verdict — which is the instrument every later feature needs to be verified spine-safe before it ships.
+
 ## [0.4.6] - 2026-06-17
 
 ### Changed

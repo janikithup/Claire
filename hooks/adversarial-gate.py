@@ -65,6 +65,11 @@ MIN_COVERAGE = 0.6
 TRAILING_SLACK = 240            # chars of boilerplate allowed after a prefix-matched brief
 MIN_RECEIPT_LEN_FOR_SLACK = 60  # the slack path needs a real brief, not a tiny decoy prefix
 STRICT = os.environ.get("CLAIRE_GATE_STRICT", "").strip() not in ("", "0", "false", "False")
+# CLAIRE_DEBUG=1 surfaces an under-the-hood trace of every Claire dispatch — the gate's
+# decision, whether a receipt matched, the brief-region size — so a builder can watch the
+# de-priming work (see the brief next to the verdict). OFF by default; pure visibility, it
+# NEVER changes the decision the gate takes. Parsed exactly like CLAIRE_GATE_STRICT above.
+DEBUG = os.environ.get("CLAIRE_DEBUG", "").strip() not in ("", "0", "false", "False")
 
 
 def log(line):
@@ -163,6 +168,15 @@ def emit_context(msg):
     print(json.dumps(out))
 
 
+def debug_trace(agent, decision, matched, region_len):
+    """One-line under-the-hood trace, emitted only when CLAIRE_DEBUG is on. Visibility
+    only — it reports the decision the gate already took; it never alters it."""
+    return ("[CLAIRE TRACE] gate: agent=%s · decision=%s · receipt=%s · "
+            "brief-region-len=%d · strict=%s"
+            % (agent or "?", decision, "matched" if matched else "none",
+               region_len, "on" if STRICT else "off"))
+
+
 NORECEIPT_MSG = (
     "[CLAIRE GATE] This adversarial dispatch carries the " + TAG + " tag but NO leak-audit "
     "receipt exists for this brief — meaning brief-leak-auditor did not actually run on this "
@@ -224,27 +238,43 @@ def main():
     if not is_adv:
         return  # not Claire's adversarial dispatch — silent pass
 
+    # Compute the receipt match ONCE: it drives both the decision below and the debug
+    # trace, so the trace can never disagree with the call the gate actually makes.
+    region = brief_region(prompt)
+    matched = has_matching_receipt(region)
+    agent = atype or "?"
+
+    def with_trace(msg, decision):
+        """Append the debug trace to a message when CLAIRE_DEBUG is on; otherwise return
+        the message untouched. The decision is already made — this only adds visibility."""
+        if not DEBUG:
+            return msg
+        trace = debug_trace(agent, decision, matched, len(region))
+        return (msg + "\n\n" + trace) if msg else trace
+
     # The receipt — not the tag — is what certifies de-priming.
-    if has_matching_receipt(brief_region(prompt)):
-        log("PASS agent=%s" % (atype or "?"))
-        return  # audited-and-clean brief — pass through silently
+    if matched:
+        log("PASS agent=%s" % agent)
+        if DEBUG:
+            emit_context(with_trace("", "PASS"))  # silent in normal use; trace only in debug
+        return  # audited-and-clean brief — pass through
 
     tag_present = TAG in prompt
     if tag_present:
-        log("NORECEIPT agent=%s (tag, no receipt)" % (atype or "?"))
+        log("NORECEIPT agent=%s (tag, no receipt)" % agent)
         if STRICT:
-            log("BLOCK agent=%s (strict, no receipt)" % (atype or "?"))
-            emit_block(NORECEIPT_MSG)
+            log("BLOCK agent=%s (strict, no receipt)" % agent)
+            emit_block(with_trace(NORECEIPT_MSG, "NORECEIPT/BLOCK"))
         else:
-            emit_context(NORECEIPT_MSG)
+            emit_context(with_trace(NORECEIPT_MSG, "NORECEIPT"))
         return
 
-    log("REMIND agent=%s (no %s)" % (atype or "?", TAG))
+    log("REMIND agent=%s (no %s)" % (agent, TAG))
     if STRICT:
-        log("BLOCK agent=%s (strict, no tag)" % (atype or "?"))
-        emit_block(REMIND_MSG)
+        log("BLOCK agent=%s (strict, no tag)" % agent)
+        emit_block(with_trace(REMIND_MSG, "REMIND/BLOCK"))
     else:
-        emit_context(REMIND_MSG)
+        emit_context(with_trace(REMIND_MSG, "REMIND"))
 
 
 if __name__ == "__main__":

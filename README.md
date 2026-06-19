@@ -90,6 +90,12 @@ variable `CLAIRE_GATE_STRICT=1` on that machine — but first run a real
 (i.e. receipts are being written on your setup), so strict mode blocks only true
 skips, not a payload-shape quirk.
 
+**Building on Claire? Turn on the trace.** Set `CLAIRE_DEBUG=1` and every critic
+dispatch surfaces a short under-the-hood trace — the leak-audit verdict, whether a
+receipt matched, and the gate's decision — so you can watch the de-priming work and
+see the brief next to the verdict. It is off by default and reaches no normal user:
+it only changes what is *shown*, never how a brief is de-primed or how a critic runs.
+
 **On the Claude Desktop app, run `setup-receipts.sh` once per machine.** Desktop
 does not fire a plugin's *after-tool* hooks — and writing the receipt is an
 after-tool hook — so without this step no receipt is ever written, the gate can

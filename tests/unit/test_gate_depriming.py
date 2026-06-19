@@ -57,6 +57,10 @@ def run_gate(payload, receipts=None, env=None):
                 with open(os.path.join(rdir, "r%d.json" % i), "w") as fh:
                     json.dump({"ts": now - age, "text": norm, "len": len(norm)}, fh)
         run_env = dict(os.environ)
+        # Hermetic: never inherit the developer's CLAIRE_* switches, so the suite is
+        # deterministic regardless of the shell. Tests opt into them via `env`.
+        for var in ("CLAIRE_DEBUG", "CLAIRE_GATE_STRICT"):
+            run_env.pop(var, None)
         if env:
             run_env.update(env)
         proc = subprocess.run(
@@ -330,6 +334,60 @@ def test_fail_open_on_garbage_stdin():
             capture_output=True, text=True, timeout=15)
     assert proc.returncode == 0, "fail-open: must exit 0 even on garbage input"
     assert proc.stdout.strip() == "", "fail-open: must emit no blocking output on error"
+
+
+# --- CLAIRE_DEBUG trace switch (off by default; adds visibility, never changes the call) ---
+
+@case
+def test_debug_on_emits_trace_on_silent_pass():
+    """BUG GUARDED: with CLAIRE_DEBUG on, the builder still can't see a passing run — the
+    gate stays silent on PASS. Debug mode must surface a [CLAIRE TRACE] line on the
+    normally-silent PASS so the brief can be seen next to the verdict."""
+    brief = "\nNeutral situation: a team plans X. Find failure modes."
+    out, log = run_gate(
+        _dispatch("claire:failure-mode-attacker", TAG + brief),
+        receipts=[(brief, 10)], env={"CLAIRE_DEBUG": "1"})
+    assert out.strip(), "debug mode must emit a trace even on a PASS"
+    ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert "[CLAIRE TRACE]" in ctx, "PASS trace must carry the trace marker"
+    assert "decision=PASS" in ctx and "receipt=matched" in ctx
+    assert "claire:failure-mode-attacker" in ctx, "trace must name the dispatched agent"
+    assert "PASS" in log, "debug must not change the underlying PASS decision"
+
+
+@case
+def test_debug_on_remind_appends_trace_keeps_reminder():
+    """BUG GUARDED: debug mode REPLACES the user-facing reminder with a trace, so turning
+    debug on loses the de-priming nudge. The trace must be ADDED to the existing reminder."""
+    out, log = run_gate(
+        _dispatch("claire:failure-mode-attacker", "Attack this rollout plan."),
+        env={"CLAIRE_DEBUG": "1"})
+    ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert "CLAIRE GATE" in ctx, "the reminder must survive debug mode"
+    assert "[CLAIRE TRACE]" in ctx and "decision=REMIND" in ctx and "receipt=none" in ctx
+    assert "REMIND" in log
+
+
+@case
+def test_debug_off_leaves_no_trace_marker():
+    """BUG GUARDED (regression): debug accidentally on by default leaks the trace into
+    normal use. With CLAIRE_DEBUG unset, a reminder must carry NO trace marker."""
+    out, log = run_gate(_dispatch("claire:failure-mode-attacker", "Attack this plan."))
+    ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert "[CLAIRE TRACE]" not in ctx, "no trace when debug is off"
+
+
+@case
+def test_debug_does_not_change_block_decision():
+    """BUG GUARDED: debug visibility must never alter the gate's actual call. With strict
+    mode AND debug on, a missing receipt must STILL deny — and also carry the trace."""
+    out, log = run_gate(
+        _dispatch("claire:failure-mode-attacker", "Attack this plan."),
+        env={"CLAIRE_GATE_STRICT": "1", "CLAIRE_DEBUG": "1"})
+    obj = json.loads(out)["hookSpecificOutput"]
+    assert obj.get("permissionDecision") == "deny", "debug must not soften a strict-mode block"
+    assert "[CLAIRE TRACE]" in obj["permissionDecisionReason"], "block reason must carry the trace"
+    assert "BLOCK" in log
 
 
 if __name__ == "__main__":

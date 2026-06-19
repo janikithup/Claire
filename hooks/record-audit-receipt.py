@@ -53,6 +53,17 @@ def is_clean_verdict(resp):
 AUDITOR_NAMES = {"brief-leak-auditor"}
 RECEIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".receipts")
 TTL_SECONDS = 2 * 60 * 60  # a receipt is valid for 2 hours, then ignored/pruned
+# CLAIRE_DEBUG=1 surfaces a one-line trace of each leak-audit — the parsed verdict and
+# whether a receipt was written — so a builder can watch the de-priming work. OFF by
+# default; pure visibility, it NEVER changes whether a receipt is written.
+DEBUG = os.environ.get("CLAIRE_DEBUG", "").strip() not in ("", "0", "false", "False")
+
+
+def emit_trace(msg):
+    """Emit a one-line under-the-hood trace to the model (PostToolUse additionalContext),
+    only when CLAIRE_DEBUG is on. Visibility only — never affects the receipt write."""
+    out = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}
+    print(json.dumps(out))
 
 
 def normalise(text):
@@ -129,15 +140,23 @@ def main():
         return  # not the leak-auditor — nothing to record
 
     brief = ti.get("prompt") or ti.get("description") or ""
-    if not is_clean_verdict(response_text(data)):
+    resp = response_text(data)
+    if not is_clean_verdict(resp):
+        if DEBUG:
+            label = "LEAN" if LEAN_TOKEN.search(resp) else "not-clean"
+            emit_trace("[CLAIRE TRACE] receipt: verdict=%s · no receipt written" % label)
         return
 
     norm = strip_coda(normalise(brief))
     if not norm:
+        if DEBUG:
+            emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN (GENUINELY-NEUTRAL) · "
+                       "empty brief, no receipt written")
         return
 
     now = time.time()
     prune(now)
+    digest = None
     try:
         os.makedirs(RECEIPT_DIR, exist_ok=True)
         digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
@@ -145,6 +164,9 @@ def main():
             json.dump({"ts": now, "text": norm, "len": len(norm)}, fh)
     except Exception:
         pass
+    if DEBUG:
+        emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN (GENUINELY-NEUTRAL) · "
+                   "wrote digest %s (brief len %d)" % (digest or "?", len(norm)))
 
 
 if __name__ == "__main__":
