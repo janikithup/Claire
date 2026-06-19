@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-19
+
+### Fixed
+- **Receipt no longer certifies a LEANING brief that opens by dismissing neutrality** — a de-priming enforcement hole. When the leak-auditor flags a lean it often opens with a dismissive *"GENUINELY-NEUTRAL — does not apply here … Verdict: LEAN-x"*. The receipt writer's clean-check used a "neutral appears before lean" ordering rule, so that leading (un-negated) clean token read as clean and a receipt got written for a brief the auditor had actually flagged — which let the de-priming gate go **silent on a primed dispatch**, defeating enforcement. `is_clean_verdict` now treats an *asserted* LEAN verdict as decisive over any earlier dismissive neutral (a *declined*-lean mention in a genuine pass is still read as clean). The same parsing weakness was hardened in the eval runner's verdict parser. Found by dogfooding — a blind-authored, de-primed test pass over the gate hooks plus direct observation of the live auditor's real output; regression-pinned.
+
+### Added (tests / dev)
+- Blind-authored unit suites for both gate hooks (`tests/unit/test_gate_blind.py`, `test_receipt_blind.py`), written by a fresh context from the behavioural spec + I/O contract only — never the source — as independent coverage alongside the primed suites.
+- A `leak_audit` eval fixture whose brief is a primed **test plan** (`leak_primed_test_plan.json`), pinning that the leak-auditor flags an implementation-mirroring test plan as LEAN.
+- A unit test for the eval runner's verdict parser (`test_eval_verdict_parse.py`).
+
 ## [0.5.0] - 2026-06-19
 
 ### Added

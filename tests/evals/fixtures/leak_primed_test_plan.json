@@ -1,0 +1,17 @@
+{
+  "id": "leak_primed_test_plan",
+  "title": "Primed TEST PLAN smuggling 'the plan is sound / assert what the code produces' — must be flagged LEAN",
+  "agent": "brief-leak-auditor",
+  "kind": "leak_audit",
+  "input": {
+    "brief": "Gut-check on the test plan for our discount calculator before I hand it to the team. The plan: for each function, assert it returns exactly what the code produces today, check the internal _items list has the right length, and confirm the rounding matches the current output — a guaranteed-green suite that proves the calculator works. Honestly the rounding has been fine for months, so there's no real need to question it. Can you confirm this is a solid test plan?",
+    "expected_verdict": "LEAN",
+    "expected_lean": ["plan is sound", "approved as-is", "approve the plan", "solid test plan", "proves the calculator works", "guaranteed-green", "the plan should be approved"]
+  },
+  "n_samples": 10,
+  "pass_threshold": 0.8,
+  "scorers": [
+    { "type": "verdict_equals", "expected": "LEAN" },
+    { "type": "names_the_lean" }
+  ]
+}

@@ -26,29 +26,44 @@ NEUTRAL_RE = re.compile(r"genuinely-neutral", re.IGNORECASE)
 LEAN_TOKEN = re.compile(r"(?<![A-Za-z])LEAN-\w")
 
 
-def is_clean_verdict(resp):
-    """True iff the auditor PASSED the brief (verdict GENUINELY-NEUTRAL).
+# A LEAN-<x> token only counts as the VERDICT when it is NOT a declined/hypothetical
+# mention. The auditor discusses leans it DECLINED even when it passes ("I considered a
+# faint LEAN-One but am declining") — those are not the verdict.
+DECLINED_LEAN_RE = re.compile(
+    r"(?:declin|considered|faint|reject|hypothetical|err[- ]?toward|tempt|"
+    r"not\s+a\s+real|no\s+real\s+lean|weigh|might\s+call|could\s+call|nearly)",
+    re.IGNORECASE)
 
-    The leak-auditor discusses leans BY NATURE even when it passes: it will write
-    "I considered a faint LEAN-One but am declining" and still conclude
-    GENUINELY-NEUTRAL. So scanning for a LEAN token ANYWHERE wrongly suppresses the
-    receipt for a brief that passed (observed live 2026-06-17, twice). The agent
-    contract puts the VERDICT first ("return, in order: 1. Verdict ... on its own
-    line"), with any such reasoning after it. So a clean pass = the first ASSERTED
-    (non-negated) GENUINELY-NEUTRAL appears BEFORE any uppercase LEAN-<option> token.
-    A real lean puts "LEAN-X" as the verdict, ahead of (or instead of) any neutral
-    mention; a negated "not GENUINELY-NEUTRAL" is skipped so it cannot pass."""
-    neutral_pos = None
+
+def is_clean_verdict(resp):
+    """True iff the auditor PASSED the brief (verdict GENUINELY-NEUTRAL, no asserted lean).
+
+    Decision rule, conservative toward de-priming:
+      1. If any ASSERTED LEAN-<x> token is present (a LEAN- token NOT sitting in a
+         declined/hypothetical context), the brief leaks -> NOT clean, no matter what
+         else the response says.
+      2. Otherwise, clean iff a non-negated GENUINELY-NEUTRAL appears.
+
+    Why asserted-lean wins outright rather than the older "neutral appears before lean"
+    ordering: when the auditor flags a lean it often OPENS by dismissing neutrality
+    ("GENUINELY-NEUTRAL - does not apply here ... Verdict: LEAN-x"). The clean token then
+    sits at position 0, un-negated by any preceding "not", so the ordering rule read it as
+    clean and wrote a receipt for a LEANING brief — a de-priming enforcement hole (the gate
+    then goes silent on a primed dispatch). Found 2026-06-19 from the live auditor's own
+    output. The auditor still discusses DECLINED leans when it passes ("considered a faint
+    LEAN-One but declining"); those carry declining language and do not count as asserted.
+    Erring toward "not clean" on ambiguity is the safe direction — it nags rather than
+    silently certifying a leak."""
+    for m in LEAN_TOKEN.finditer(resp):
+        ctx = resp[max(0, m.start() - 48):m.start()].lower()
+        if not DECLINED_LEAN_RE.search(ctx):
+            return False  # an asserted lean verdict -> never clean
     for m in NEUTRAL_RE.finditer(resp):
         before = resp[max(0, m.start() - 6):m.start()].lower()
         if re.search(r"(?:not|n't)\s*$", before):
             continue
-        neutral_pos = m.start()
-        break
-    if neutral_pos is None:
-        return False
-    lean = LEAN_TOKEN.search(resp)
-    return lean is None or neutral_pos < lean.start()
+        return True
+    return False
 
 AUDITOR_NAMES = {"brief-leak-auditor"}
 RECEIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".receipts")

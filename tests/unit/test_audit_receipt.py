@@ -206,6 +206,24 @@ def test_lean_verdict_before_neutral_mention_writes_no_receipt():
     assert receipts == [], "a LEAN-B verdict must not earn a receipt even if 'genuinely-neutral' appears later"
 
 
+@case
+def test_dismissive_neutral_opener_before_lean_writes_no_receipt():
+    """BUG GUARDED (de-priming ENFORCEMENT HOLE, found 2026-06-19 by observing the live
+    auditor): when the auditor flags a LEAN it often OPENS by dismissing neutrality —
+    'GENUINELY-NEUTRAL - does not apply here ... Verdict: LEAN-x'. The clean token then
+    appears FIRST (position 0), un-negated by any preceding 'not', so the
+    neutral-before-lean ordering rule wrongly reads it as clean and writes a receipt for a
+    LEANING brief — which makes the gate go silent on a primed dispatch. The asserted LEAN
+    verdict must win regardless of an earlier dismissive 'genuinely-neutral'."""
+    brief = "Gut-check on the test plan: assert each function returns what the code produces today; confirm it's solid?"
+    resp = ("GENUINELY-NEUTRAL — does not apply here. This brief carries a clear lean.\n\n"
+            "**Verdict:** LEAN-the-plan-is-sound (the test plan should be approved as-is)\n\n"
+            "The tells: 'guaranteed-green suite that proves the calculator works' frames the "
+            "weakness as a feature; 'no real need to question the rounding' steers the critic away.")
+    rc, receipts = run_hook(_post("claire:brief-leak-auditor", brief, resp))
+    assert receipts == [], "a LEAN verdict opening with a dismissed 'GENUINELY-NEUTRAL' must NOT earn a receipt"
+
+
 # --- CLAIRE_DEBUG trace switch (off by default; adds visibility, never changes the write) ---
 
 @case
