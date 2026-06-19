@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-20
+
+### Added
+- **An on-machine event log — Claire can now show you her own de-priming activity.** Every gate decision and every leak-audit records one privacy-safe line to `~/.claude/claire/events.jsonl`, and `/claire:doctor` reports the mix: how often the gate let a de-primed brief through (PASS) vs caught a skipped one (REMIND / NORECEIPT / BLOCK), the neutral-vs-leaning audit rate, receipts written, and per-critic counts. The log is **observability only** — it never touches a dispatch, the gate's decision, or whether a receipt is written. Privacy and the spine are guaranteed by construction: a strict field **allowlist** makes brief text, content hashes, and the lean **direction** structurally impossible to write (the verdict is collapsed to a binary neutral/leaning before it lands); writes are fail-open, bounded, lock-protected, and self-initializing. The reader **dedups the N-version double-write** the desktop hook-glob produces — one real dispatch logs once per cached version (same content-free correlation id, different version), so the metrics aren't multiplied by how many old versions sit in the cache. Stdlib only; the log is plain JSON-lines you can `cat`.
+
+### Fixed
+- **`/claire:doctor` no longer false-warns that enforcement is "stale" on a healthy install.** Its receipt-registration check read the version-agnostic **glob** registration as a literal path (with the `*` unexpanded), so every marketplace install was mislabeled "stale" even when enforcement was correctly wired and firing. It now expands the glob before checking.
+
 ## [0.5.3] - 2026-06-19
 
 ### Fixed

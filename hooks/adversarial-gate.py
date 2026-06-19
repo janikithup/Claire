@@ -81,6 +81,28 @@ STRICT = os.environ.get("CLAIRE_GATE_STRICT", "").strip() not in ("", "0", "fals
 # NEVER changes the decision the gate takes. Parsed exactly like CLAIRE_GATE_STRICT above.
 DEBUG = os.environ.get("CLAIRE_DEBUG", "").strip() not in ("", "0", "false", "False")
 
+# Event log (0.6.0) — OBSERVABILITY only; never affects the decision below. Import-guarded
+# so an install missing the shared logger (or the copy-one-file unit harness) can't crash
+# the gate on a failed import — claire_log stays None and logging silently no-ops.
+try:
+    import claire_log
+except Exception:
+    claire_log = None
+
+
+def _plugin_version():
+    """Best-effort version of THIS cached build (hooks/../.claude-plugin/plugin.json), so the
+    stats reader can dedup the N-version double-write the desktop hook-glob produces. -> None
+    on any error (fail-open)."""
+    try:
+        with open(os.path.join(HERE, "..", ".claude-plugin", "plugin.json")) as fh:
+            return json.load(fh).get("version")
+    except Exception:
+        return None
+
+
+PLUGIN_VERSION = _plugin_version()
+
 
 def log(line):
     try:
@@ -277,9 +299,27 @@ def main():
         trace = debug_trace(agent, decision, matched, len(region))
         return (msg + "\n\n" + trace) if msg else trace
 
+    # Content-free correlation id: the harness dispatch tool-call id, identical across every
+    # concurrently-firing cached version, never brief-derived — lets the reader dedup the
+    # N-version double-write and join this 'pre' event to its 'post' audit. Absent -> omitted.
+    dispatch_id = data.get("tool_use_id")
+
+    def record_pre(decision):
+        """Log one 'pre' event for this gate decision. OBSERVABILITY only — fail-open, and
+        never affects the decision already taken above."""
+        if not claire_log:
+            return
+        try:
+            claire_log.record(event="pre", gate_decision=decision, agent=agent,
+                              dispatch_id=dispatch_id, plugin_version=PLUGIN_VERSION,
+                              brief_len=len(region))
+        except Exception:
+            pass
+
     # The receipt — not the tag — is what certifies de-priming.
     if matched:
         log("PASS agent=%s" % agent)
+        record_pre("PASS")
         if DEBUG:
             emit_context(with_trace("", "PASS"))  # silent in normal use; trace only in debug
         return  # audited-and-clean brief — pass through
@@ -289,16 +329,20 @@ def main():
         log("NORECEIPT agent=%s (tag, no receipt)" % agent)
         if STRICT:
             log("BLOCK agent=%s (strict, no receipt)" % agent)
+            record_pre("BLOCK")
             emit_block(with_trace(NORECEIPT_MSG, "NORECEIPT/BLOCK"))
         else:
+            record_pre("NORECEIPT")
             emit_context(with_trace(NORECEIPT_MSG, "NORECEIPT"))
         return
 
     log("REMIND agent=%s (no %s)" % (agent, TAG))
     if STRICT:
         log("BLOCK agent=%s (strict, no tag)" % agent)
+        record_pre("BLOCK")
         emit_block(with_trace(REMIND_MSG, "REMIND/BLOCK"))
     else:
+        record_pre("REMIND")
         emit_context(with_trace(REMIND_MSG, "REMIND"))
 
 

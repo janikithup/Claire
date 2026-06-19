@@ -73,6 +73,43 @@ TTL_SECONDS = 2 * 60 * 60  # a receipt is valid for 2 hours, then ignored/pruned
 # default; pure visibility, it NEVER changes whether a receipt is written.
 DEBUG = os.environ.get("CLAIRE_DEBUG", "").strip() not in ("", "0", "false", "False")
 
+# Event log (0.6.0) — OBSERVABILITY only; never affects whether a receipt is written.
+# Import-guarded so an install missing the shared logger (or the copy-one-file unit harness)
+# can't crash the writer on a failed import — claire_log stays None and logging no-ops.
+try:
+    import claire_log
+except Exception:
+    claire_log = None
+
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _plugin_version():
+    """Best-effort version of THIS cached build, so the reader can dedup the N-version
+    double-write. -> None on any error (fail-open)."""
+    try:
+        with open(os.path.join(_HOOK_DIR, "..", ".claude-plugin", "plugin.json")) as fh:
+            return json.load(fh).get("version")
+    except Exception:
+        return None
+
+
+PLUGIN_VERSION = _plugin_version()
+
+
+def record_post(clean, proof_written, agent, dispatch_id, brief_len):
+    """Log one 'post' event per auditor completion. OBSERVABILITY only — fail-open; the lean
+    DIRECTION never persists (the logger binarises the verdict to neutral/leaning)."""
+    if not claire_log:
+        return
+    try:
+        claire_log.record(event="post", verdict=("neutral" if clean else "leaning"),
+                          proof_written=proof_written, agent=agent,
+                          dispatch_id=dispatch_id, plugin_version=PLUGIN_VERSION,
+                          brief_len=brief_len)
+    except Exception:
+        pass
+
 
 def emit_trace(msg):
     """Emit a one-line under-the-hood trace to the model (PostToolUse additionalContext),
@@ -156,32 +193,42 @@ def main():
 
     brief = ti.get("prompt") or ti.get("description") or ""
     resp = response_text(data)
-    if not is_clean_verdict(resp):
-        if DEBUG:
+    # Content-free correlation id (harness tool-call id) joining this 'post' audit to its
+    # 'pre' gate event. Confirmed present in PreToolUse; may be absent in PostToolUse — the
+    # logger omits it when None, and per-event metrics still compute without it.
+    dispatch_id = data.get("tool_use_id")
+    clean = is_clean_verdict(resp)
+    norm = strip_coda(normalise(brief))
+    proof_written = False
+    digest = None
+
+    # A receipt is written ONLY for a clean verdict on a non-empty brief — unchanged from
+    # before; the surrounding event logging is purely additive.
+    if clean and norm:
+        now = time.time()
+        prune(now)
+        try:
+            os.makedirs(RECEIPT_DIR, exist_ok=True)
+            digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
+            with open(os.path.join(RECEIPT_DIR, digest + ".json"), "w") as fh:
+                json.dump({"ts": now, "text": norm, "len": len(norm)}, fh)
+            proof_written = True
+        except Exception:
+            pass
+
+    # One 'post' event per auditor completion (clean or leaning) — binary verdict only.
+    record_post(clean, proof_written, atype, dispatch_id, len(norm))
+
+    if DEBUG:
+        if not clean:
             label = "LEAN" if LEAN_TOKEN.search(resp) else "not-clean"
             emit_trace("[CLAIRE TRACE] receipt: verdict=%s · no receipt written" % label)
-        return
-
-    norm = strip_coda(normalise(brief))
-    if not norm:
-        if DEBUG:
+        elif not norm:
             emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN (GENUINELY-NEUTRAL) · "
                        "empty brief, no receipt written")
-        return
-
-    now = time.time()
-    prune(now)
-    digest = None
-    try:
-        os.makedirs(RECEIPT_DIR, exist_ok=True)
-        digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
-        with open(os.path.join(RECEIPT_DIR, digest + ".json"), "w") as fh:
-            json.dump({"ts": now, "text": norm, "len": len(norm)}, fh)
-    except Exception:
-        pass
-    if DEBUG:
-        emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN (GENUINELY-NEUTRAL) · "
-                   "wrote digest %s (brief len %d)" % (digest or "?", len(norm)))
+        else:
+            emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN (GENUINELY-NEUTRAL) · "
+                       "wrote digest %s (brief len %d)" % (digest or "?", len(norm)))
 
 
 if __name__ == "__main__":

@@ -82,7 +82,16 @@ if not cmds:
     print("none"); sys.exit()
 m = re.search(r"(\S*record-audit-receipt\.py)", cmds[0])
 p = os.path.expanduser(m.group(1)) if m else ""
-print("ok" if (p and os.path.isfile(p)) else "stale")
+# The registration is normally a version-AGNOSTIC GLOB (…/claire/*/hooks/record-audit-receipt.py)
+# so the receipt writer survives version updates. A literal isfile() on that captured pattern
+# (with the * unexpanded) is ALWAYS false — which used to false-WARN "stale" on every marketplace
+# install. Expand a glob when the pattern contains wildcards; otherwise check the literal path.
+import glob as _glob
+if any(c in p for c in "*?["):
+    live = bool(_glob.glob(p))
+else:
+    live = bool(p and os.path.isfile(p))
+print("ok" if live else "stale")
 PYEOF
 )"
 case "$reg" in
@@ -133,6 +142,22 @@ if [ -d "$HOME/.claude/skills" ]; then
   done < <(find "$HOME/.claude/skills" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
 fi
 [ "$leftover" -eq 0 ] && ok "no superseded adversarial installs found"
+echo ""
+
+echo "Event log (de-priming activity on this machine)"
+# The event log (claire_log.py -> events.jsonl) records one privacy-safe line per gate
+# decision and per audit. The reader dedups the N-version double-write and reports the mix.
+LOG_DIR="${CLAIRE_LOG_DIR:-$HOME/.claude/claire}"
+LOG="$LOG_DIR/events.jsonl"
+READER="$PLUGIN_ROOT/hooks/claire_log_stats.py"
+if [ ! -f "$READER" ]; then
+  warn "event-log reader (hooks/claire_log_stats.py) missing from this install"
+elif [ -f "$LOG" ]; then
+  ok "event log present: $LOG"
+  python3 "$READER" "$LOG" 2>/dev/null | sed 's/^/    /' || warn "event-log reader did not run cleanly"
+else
+  ok "no events logged yet — the log fills as you use Claire's critics (path: $LOG)"
+fi
 echo ""
 
 echo "-----------------------------------------------------------"
