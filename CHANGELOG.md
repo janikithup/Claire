@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-19
+
+### Fixed
+- **Context-starved critics could fabricate an artifact they were pointed at — and were silently granted all tools.** Three prompt-only critics (`failure-mode-attacker`, `over-capture-triage-verifier`, `probe-auditor`) declared `tools: []`, which the harness reads as "inherit **all** tools", not "none" (the session registry showed them as "All tools"). So a critic whose own prompt said *"work entirely from the brief"* had full tool access, and when an orchestrator pointed it at a file path it **fabricated the file's contents and critiqued the fiction** (`tool_uses: 0`) — a silent integrity failure caught only because the orchestrator happened to hold the real file. A critic inventing what it critiques is worse than a leak. Fixed: the three now declare a real restriction (`tools: TaskCreate`, the project's proven prompt-only marker), and every work-from-the-brief critic carries an explicit guard — *if the artifact is not present in your brief, stop and say so; never reconstruct it from memory.* New regression test (`test_agent_tools.py`) pins both at the manifest layer, and a test-hermeticity gap (the receipt↔gate integration test inherited an ambient `CLAIRE_DEBUG`) is closed. Whether critics *should* read files is a separate, spine-delicate question (roadmap C), deliberately not addressed here. Found via a field session that filed an issue after Claire fabricated a a-long-document critique.
+
 ## [0.5.1] - 2026-06-19
 
 ### Fixed

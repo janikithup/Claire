@@ -36,8 +36,14 @@ def case(fn):
 
 
 def _stage(td, script, payload):
+    # Hermetic: scrub the CLAIRE_* switches from the inherited env so a developer running
+    # with CLAIRE_DEBUG / CLAIRE_GATE_STRICT set doesn't flip a silent PASS into a trace
+    # or a block (same hardening as test_gate_depriming.py / test_audit_receipt.py).
+    env = dict(os.environ)
+    for var in ("CLAIRE_DEBUG", "CLAIRE_GATE_STRICT"):
+        env.pop(var, None)
     proc = subprocess.run([sys.executable, os.path.join(td, script)],
-                          input=json.dumps(payload), capture_output=True, text=True, timeout=15)
+                          input=json.dumps(payload), capture_output=True, text=True, timeout=15, env=env)
     return proc.returncode, proc.stdout
 
 
