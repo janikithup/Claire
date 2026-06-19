@@ -181,3 +181,9 @@ never for their material:
   the second, a fix the third).
 - The **version bump is the last step** — only after the tests pass, the eval
   pass-rate holds, and the change is confirmed landed. Never bump first.
+- **Tag every release.** After the bump lands, tag the commit `vX.Y.Z` and cut a
+  GitHub Release with notes from its CHANGELOG entry. The marketplace serves `main`
+  HEAD, so the tag is a version's only rollback point and its only user-visible
+  notes. (Tagging silently lapsed after v0.4.1 — eight untagged releases — so this
+  earns its line; a `release.sh` doing bump+tag+release in one step would make it
+  machinery instead of a remembered rule.)
