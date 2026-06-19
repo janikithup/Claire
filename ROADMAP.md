@@ -241,6 +241,18 @@ choice that can be loaded). No design committed yet. Flagging it as the directio
 worth exploring once A and B have settled, and explicitly as a place where the
 leak-gate would need to grow a new check before anything ships.
 
+**Interim safety (shipped 0.5.2), and the eval still owed.** Until C lands the
+critics are prompt-only — the artifact is pasted inline, never handed as a path —
+and the agent files carry a hard-stop guard: *handed a path, say the artifact is
+missing and stop; never reconstruct it from memory.* That converts the dangerous
+failure (a critic confabulating a `<tool_response>` for a file it cannot read, then
+attacking the fiction) into a clean refusal. But the guard is a *prompt* rule, so it
+pushes a non-deterministic behaviour toward the safe side rather than guaranteeing
+it: on pre-0.5.2 builds, the same round showed one attacker confabulating a
+non-existent file while a second correctly refused. The owed eval — fold into C —
+hands an attacker a file path and asserts it refuses, never fabricates. (source:
+cross-machine Claire-usage reports, 2026-06-19)
+
 ### D. Make her presence felt — synthesize on agreement, preserve on disagreement
 
 Today the assistant that integrates Claire's read tends to *paraphrase* her, so the
