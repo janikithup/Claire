@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-06-19
+
+### Fixed
+- **A neutral brief that pastes in a large document for review no longer draws a false "no receipt" warning — and the fix strengthened the de-priming rather than relaxing it.** The symptom: leak-audit the framing, then inline a big artifact (a draft, a plan, a chapter), and the gate warned `NORECEIPT` because the audited framing covered far less than the dispatched whole. The tempting fix — mark the artifact and exclude its bulk from the gate's coverage check — was caught as a **spine hole** by dogfooding Claire's own critics: an artifact excluded from coverage *and* never audited can carry the author's hoped-for answer straight to the critic, unchecked (the same shape as the decoy attack the coverage floor exists to stop). So the gate's matching logic is unchanged. The real fix is a workflow rule, now stated in both skills: **leak-audit the FULLY ASSEMBLED brief — the framing plus the inlined artifact, byte-for-byte what the critic receives** — never the framing alone with the artifact added after. The artifact is the most important part of the check, not an exemption; the gate's `NORECEIPT` message now names the assemble-then-inline mistake as the most common cause. Separately, the gate located the brief by the *last* `[DEPRIMED-BRIEF]` tag, so an artifact that merely *quotes* the tag — common when Claire reviews Claire's own docs — truncated the checked region and false-warned even when correctly audited; it now uses the *first* tag (the delimiter the orchestrator places), so the whole brief, embedded tag-text and all, is what gets matched. Three regression tests pin it: an assembled brief passes, a framing-only receipt with an unaudited artifact still warns, and an artifact quoting the tag still matches.
+
 ## [0.5.2] - 2026-06-19
 
 ### Fixed

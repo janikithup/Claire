@@ -61,6 +61,16 @@ TTL_SECONDS = 2 * 60 * 60
 # carries trailing boilerplate (e.g. the attack-license line the skill appends),
 # which would drag a pure ratio below the floor — so we ALSO accept a bounded
 # trailing remainder when the audited text is a prefix and is itself substantial.
+#
+# SPINE NOTE (0.5.3) — DO NOT "fix" the large-artifact false-block by excluding the
+# pasted artifact from this coverage denominator. It is tempting: a genuine brief that
+# inlines a big document drew a NORECEIPT, and marking the artifact + dropping it from
+# coverage would silence that. But the artifact reaches the critic; excluding it from
+# coverage WITHOUT auditing it lets a lean hidden inside the artifact ride to the critic
+# unchecked — the same shape as the decoy attack this floor exists to stop. The coverage
+# requirement is precisely what forces the WHOLE dispatched brief (artifact included) to
+# have been leak-audited. The real fix lives in the skill: audit the fully-assembled
+# brief, byte-for-byte what the critic receives. The gate stays strict on purpose.
 MIN_COVERAGE = 0.6
 TRAILING_SLACK = 240            # chars of boilerplate allowed after a prefix-matched brief
 MIN_RECEIPT_LEN_FOR_SLACK = 60  # the slack path needs a real brief, not a tiny decoy prefix
@@ -104,8 +114,17 @@ def strip_coda(norm_text):
 
 def brief_region(prompt):
     """The portion of the critic prompt that should BE the audited brief: everything
-    after the last tag. If there is no tag, the whole prompt is the candidate region."""
-    idx = prompt.rfind(TAG)
+    after the FIRST tag. If there is no tag, the whole prompt is the candidate region.
+
+    The first [DEPRIMED-BRIEF] is the delimiter the orchestrator places, with any
+    preamble (attack-license, persona) before it and the brief — artifact included —
+    after it. We deliberately take the FIRST occurrence, not the last: a pasted artifact
+    can itself QUOTE the tag (Claire reviewing Claire's own docs is the common case), and
+    rfind would then truncate the region to the tail after that embedded quote, falsely
+    warning NORECEIPT on a brief that was correctly audited as assembled. Everything after
+    the first tag is the brief, embedded tag-text and all — which is exactly what the
+    receipt fingerprints (the auditor sees the brief body, embedded tag included)."""
+    idx = prompt.find(TAG)
     region = prompt[idx + len(TAG):] if idx != -1 else prompt
     return strip_coda(normalise(region))
 
@@ -183,7 +202,13 @@ NORECEIPT_MSG = (
     "exact text (or the text changed after it ran). The tag is self-attestation; it is the "
     "receipt, not the tag, that certifies de-priming. Run brief-leak-auditor on the brief now "
     "(it reads only the brief and judges whether it leaks your lean); fix any lean it names "
-    "using ITS neutral rewrite; re-audit until clean; then re-dispatch. Do NOT reply 'my brief "
+    "using ITS neutral rewrite; re-audit until clean; then re-dispatch. "
+    "MOST COMMON cause when your brief really is neutral: you assembled it from parts — a "
+    "framing PLUS a pasted document/artifact — and audited the framing alone, then inlined the "
+    "document afterwards. Audit the FINAL assembled brief, byte-for-byte what you are sending "
+    "here, artifact included; the document reaches the critic, so a lean hidden inside it is "
+    "exactly what the check must see, and a brief whose pasted bulk was never audited is "
+    "correctly flagged. Do NOT reply 'my brief "
     "is already neutral, moving on' — a producer cannot reliably judge their own brief's "
     "neutrality, which is the exact bypass this gate exists to stop."
 )

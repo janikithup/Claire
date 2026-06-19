@@ -209,6 +209,72 @@ def test_decoy_receipt_too_small_does_not_pass():
     assert "NORECEIPT" in log
 
 
+# --- the artifact false-block (0.5.3): fix is to audit the ASSEMBLED brief ------
+# These two encode the reframe a dogfood produced. The symptom was a genuine brief
+# carrying a large inlined artifact drawing a NORECEIPT. The tempting "fix" was to
+# mark the artifact and exclude its bulk from coverage — but a context-starved
+# attacker showed that excluding-and-not-auditing the artifact lets the asker's lean
+# ride INSIDE the artifact straight to the critic, unchecked. So the gate is left
+# untouched: the artifact passes coverage when it was AUDITED (whole-brief audit),
+# and a framing-only receipt with an unaudited artifact STILL warns. The fix lives
+# in the skill (audit exactly what the critic will receive), never in the gate.
+
+@case
+def test_large_artifact_audited_in_assembled_brief_passes():
+    """BUG GUARDED (0.5.3): a genuine large-artifact dispatch falsely warns. When the brief is
+    leak-audited AS ASSEMBLED — the framing PLUS the inlined artifact, exactly what the critic
+    receives — the receipt covers the whole region and the dispatch passes silently. The
+    artifact is covered because it was audited; that audit is what keeps the spine intact (the
+    critic never sees artifact content no checker read)."""
+    framing = ("\nSituation: a team must choose where to host an internal tool. Outside read?\n\n"
+               "## Document under review\n")
+    artifact = "Proposal draft. " + ("The plan keeps the tool on the existing server at a flat cost. " * 60)
+    assembled = framing + artifact
+    out, log = run_gate(
+        _dispatch("claire:failure-mode-attacker", TAG + assembled),
+        receipts=[(assembled, 10)])
+    assert out.strip() == "", "an assembled brief audited whole must pass silently, got: %r" % out[:200]
+    assert "PASS" in log
+
+
+@case
+def test_framing_only_receipt_with_large_artifact_still_warns():
+    """BUG GUARDED (0.5.3 SPINE GUARD): the false-block must NOT be 'fixed' by letting a
+    framing-only receipt certify a brief whose large artifact was never audited — that is the
+    same shape as the decoy attack and would let unaudited content (a lean hidden in the
+    'artifact') reach the critic. Auditing the framing ALONE and inlining a large artifact
+    after must STILL warn. The fix is in the skill (audit the assembled brief), never in
+    relaxing the gate to pass this."""
+    framing = "\nSituation: a team must choose where to host an internal tool. Outside read?\n"
+    artifact = "The author is sure the second option is correct and wants that confirmed. " * 40
+    out, log = run_gate(
+        _dispatch("claire:failure-mode-attacker", TAG + framing + artifact),
+        receipts=[(framing, 10)])  # only the framing was ever audited
+    assert "PASS" not in log, "a framing-only receipt must not certify an unaudited large artifact"
+    assert "NORECEIPT" in log
+
+
+@case
+def test_artifact_quoting_the_tag_still_matches_when_audited_assembled():
+    """BUG GUARDED (0.5.3): the brief region was located via the LAST [DEPRIMED-BRIEF]
+    occurrence (rfind), so an artifact that merely QUOTES the tag — common when Claire reviews
+    Claire's own docs, which discuss the tag constantly — truncated the region to the tail
+    after the embedded quote, drawing a false NORECEIPT even though the whole assembled brief
+    was correctly audited. The delimiter is the FIRST tag the orchestrator places; everything
+    after it IS the brief, embedded tag-text included. A receipt covering the assembled brief
+    must still pass silently."""
+    brief = ("\nSituation: review this note about the de-priming gate.\n\n"
+             "## Document under review\n"
+             "The gate keys on the [DEPRIMED-BRIEF] tag and writes a receipt when the auditor "
+             "passes. List what could go wrong with that design.")
+    # the orchestrator places ONE real delimiter; the artifact text after it quotes the tag
+    out, log = run_gate(
+        _dispatch("claire:failure-mode-attacker", "Attack-license.\n" + TAG + brief),
+        receipts=[(brief, 10)])
+    assert out.strip() == "", "assembled brief whose artifact quotes the tag must still pass, got: %r" % out[:200]
+    assert "PASS" in log
+
+
 # --- strict mode: warnings become hard blocks ----------------------------------
 
 @case

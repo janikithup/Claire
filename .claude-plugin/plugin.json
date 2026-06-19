@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "claire",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "A de-priming adversarial critic for Claude Code. Ask Claire for an outside read — /claire:challenge on a plan or claim, /claire:blank for a cold take — and she strips your brief of the answer you're hoping for before a separate critic responds, so you get a genuine challenge, not agreement. Not always-on: nothing fires until you invoke her.",
   "author": {
     "name": "claire-contributors"
