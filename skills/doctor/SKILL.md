@@ -40,8 +40,10 @@ mechanism works on this machine — which is what tells you whether strict mode 
 safe to enable.
 
 1. Note the current moment, and list any existing receipts: `ls -t "<plugin-root>/hooks/.receipts/" 2>/dev/null`.
-2. Dispatch **`claire:brief-leak-auditor`** (namespaced) with this fixed, obviously
-   neutral brief as the entire prompt — nothing else:
+2. Pick any short receipt id (e.g. `doctor1`). Dispatch **`claire:brief-leak-auditor`**
+   (namespaced) with `[CLAIRE-RECEIPT:doctor1]` on its own line, then this fixed,
+   obviously neutral brief — 0.8.0 keys the written receipt by that id, and the auditor
+   ignores the id line as ambient:
 
    > A team is choosing between two suppliers for a one-year support contract.
    > Supplier A is a large, long-established firm with a higher fixed monthly fee and a
@@ -59,9 +61,11 @@ safe to enable.
    here — no texture for a lean to live in"), so it returns no verdict and no receipt:
    a false negative that looks like broken enforcement. The lean hides in the texture,
    so the self-test brief must HAVE texture.
-3. After it returns, check the receipts folder again:
-   `ls -t "<plugin-root>/hooks/.receipts/"`. A **new** `*.json` file (newer than
-   step 1) means the PostToolUse receipt hook fired and recorded the clean audit.
+3. After it returns, check for **`doctor1.json`** specifically — 0.8.0 keys each receipt
+   by its id, not by content: `ls -t "<plugin-root>/hooks/.receipts/"`. A fresh
+   `doctor1.json` (newer than step 1) means the PostToolUse receipt hook fired and
+   recorded the clean audit. (Pre-0.8.0 wrote a content-hashed filename; from 0.8.0 the
+   file is named for the id you tagged, so look for that id — not just "any new file".)
 
 ## Step 2.5 — If no receipt appeared, OFFER to turn enforcement on
 
