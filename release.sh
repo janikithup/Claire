@@ -30,14 +30,19 @@ MARKETPLACE_DIR="${CLAIRE_MARKETPLACE_DIR:-$PLUGIN_DIR/../claire-marketplace}"
 PLUGIN_REPO="janikithup/Claire"
 
 # --- version readers (single source of truth each) ---------------------------
+# Each returns EMPTY (never aborts) when its source is absent/unreadable, so the
+# explicit emptiness guards below — not a bare set -e abort — produce the message.
+# NOTE: json_version takes the FIRST "version" key. Today that is plugins[0].version
+# in marketplace.json and the top-level field in plugin.json. If a manifest ever
+# gains a top-level "version" ABOVE plugins[], key this on .plugins[0].version (jq).
 json_version() {  # first "version": "..." in $1
-  grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$1" | head -1 \
-    | sed 's/.*"\([0-9][^"]*\)".*/\1/'
+  grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$1" 2>/dev/null | head -1 \
+    | sed 's/.*"\([0-9][^"]*\)".*/\1/' || true
 }
 plugin_version()  { json_version "$PLUGIN_DIR/.claude-plugin/plugin.json"; }
 market_version()  { json_version "$MARKETPLACE_DIR/.claude-plugin/marketplace.json"; }
-latest_tag()      { git -C "$PLUGIN_DIR" tag -l 'v*' | sort -V | tail -1; }
-changelog_top()   { grep -o '## \[[0-9][^]]*\]' "$PLUGIN_DIR/CHANGELOG.md" | head -1 | sed 's/## \[\(.*\)\]/\1/'; }
+latest_tag()      { git -C "$PLUGIN_DIR" tag -l 'v*' 2>/dev/null | sort -V | tail -1 || true; }
+changelog_top()   { grep -o '## \[[0-9][^]]*\]' "$PLUGIN_DIR/CHANGELOG.md" 2>/dev/null | head -1 | sed 's/## \[\(.*\)\]/\1/' || true; }
 
 # --- non-destructive consistency check ---------------------------------------
 # The guard for the bug this script exists to kill: plugin.json moved but the
@@ -62,15 +67,23 @@ release() {
   v="$(plugin_version)"; tag="v$v"
   echo "Releasing $tag from $PLUGIN_DIR"
 
-  # preconditions — fail loud, before touching anything
+  # preconditions — fail loud, before touching ANYTHING destructive. Every check on
+  # BOTH repos runs here: the plugin tag/push/Release are effectively irreversible,
+  # so a marketplace problem must abort before them — never strand a half-published
+  # release (a tagged+released plugin whose marketplace never moved is THE bug).
   [ "$(git -C "$PLUGIN_DIR" branch --show-current)" = "main" ] || { echo "ABORT: plugin repo not on main"; exit 1; }
   if ! { git -C "$PLUGIN_DIR" diff --quiet && git -C "$PLUGIN_DIR" diff --cached --quiet; }; then
     echo "ABORT: plugin repo has uncommitted changes — bump + commit first (the bump is the last commit, not this script's job)"; exit 1
   fi
   [ -d "$MARKETPLACE_DIR/.claude-plugin" ] || { echo "ABORT: marketplace repo not at $MARKETPLACE_DIR (set CLAIRE_MARKETPLACE_DIR)"; exit 1; }
+  [ "$(git -C "$MARKETPLACE_DIR" branch --show-current)" = "main" ] || { echo "ABORT: marketplace repo not on main"; exit 1; }
+  if ! { git -C "$MARKETPLACE_DIR" diff --quiet && git -C "$MARKETPLACE_DIR" diff --cached --quiet; }; then
+    echo "ABORT: marketplace repo has uncommitted changes — commit or stash them before releasing"; exit 1
+  fi
   [ "$(changelog_top)" = "$v" ] || { echo "ABORT: CHANGELOG top is '$(changelog_top)', expected '$v' — add the [$v] entry first"; exit 1; }
   git -C "$PLUGIN_DIR" rev-parse "$tag" >/dev/null 2>&1 && { echo "ABORT: tag $tag already exists"; exit 1; }
   command -v gh >/dev/null || { echo "ABORT: gh CLI not found"; exit 1; }
+  gh auth status >/dev/null 2>&1 || { echo "ABORT: gh not authenticated (run: gh auth login)"; exit 1; }
 
   # tests — the unit layer must be green (the eval layer is run by hand, per tests/README.md)
   echo "Running unit tests…"
@@ -91,20 +104,27 @@ release() {
   printf '%s\n' "$notes" | gh release create "$tag" --repo "$PLUGIN_REPO" --title "$tag" --notes-file -
 
   # 2) marketplace repo: bump the plugin entry's version, commit, push
-  [ "$(git -C "$MARKETPLACE_DIR" branch --show-current)" = "main" ] || { echo "ABORT: marketplace repo not on main"; exit 1; }
+  #    (on-main + clean-tree already enforced in the precondition block above)
   local mfile="$MARKETPLACE_DIR/.claude-plugin/marketplace.json"
   perl -i -pe 'if (!$d && s/("version"\s*:\s*)"[^"]*"/${1}"'"$v"'"/) { $d=1 }' "$mfile"
   git -C "$MARKETPLACE_DIR" add .claude-plugin/marketplace.json
   git -C "$MARKETPLACE_DIR" commit -m "claire $v"
   git -C "$MARKETPLACE_DIR" push origin main
 
-  # 3) confirm the REMOTES actually serve $v (a green push is "accepted", not "live")
+  # 3) confirm the REMOTES actually serve $v — a green push is "accepted", not "live".
+  #    Assert, don't just print: CDN lag can return the OLD file, which would look fine.
   echo "Verifying remotes…"
   local rp rm
-  rp="$(curl -fsSL "https://raw.githubusercontent.com/janikithup/Claire/main/.claude-plugin/plugin.json"          | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1)"
-  rm="$(curl -fsSL "https://raw.githubusercontent.com/janikithup/claire-marketplace/main/.claude-plugin/marketplace.json" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1)"
-  echo "  remote plugin.json      -> $rp"
-  echo "  remote marketplace.json -> $rm"
+  rp="$(curl -fsSL "https://raw.githubusercontent.com/janikithup/Claire/main/.claude-plugin/plugin.json" 2>/dev/null              | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([0-9][^"]*\)".*/\1/' || true)"
+  rm="$(curl -fsSL "https://raw.githubusercontent.com/janikithup/claire-marketplace/main/.claude-plugin/marketplace.json" 2>/dev/null | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([0-9][^"]*\)".*/\1/' || true)"
+  echo "  remote plugin.json      -> ${rp:-<unreadable>}"
+  echo "  remote marketplace.json -> ${rm:-<unreadable>}"
+  if [ "$rp" = "$v" ] && [ "$rm" = "$v" ]; then
+    echo "Verified: both remotes serve $v."
+  else
+    echo "WARNING: a remote does not yet report $v (raw.githubusercontent.com CDN lag is common)."
+    echo "         The git state is already correct — wait a minute, then re-run './release.sh --check'."
+  fi
   echo
   echo "Done. Users get $v on their next marketplace refresh (panel: refresh marketplace, then Update claire)."
 }

@@ -193,5 +193,8 @@ never for their material:
   `./release.sh` does tag + push + GitHub Release + marketplace bump + push + a
   post-publish remote check in one step; `./release.sh --check` verifies all four
   version sources (plugin.json, marketplace.json, latest tag, CHANGELOG) agree. Run
-  the script — don't do these by hand. (The cross-repo check can't live in the unit
-  suite: the sibling marketplace repo isn't present in CI.)
+  `./release.sh --check` first to confirm the at-rest state, then `./release.sh` to
+  publish — it assumes plugin.json is **already bumped and committed** (the bump is
+  the feature's last commit, not the script's job). Run the script — don't do these
+  by hand. (The cross-repo check can't live in the unit suite: the sibling
+  marketplace repo isn't present in CI.)
