@@ -90,6 +90,22 @@ variable `CLAIRE_GATE_STRICT=1` on that machine — but first run a real
 (i.e. receipts are being written on your setup), so strict mode blocks only true
 skips, not a payload-shape quirk.
 
+**Running Claire during autonomous work.** By default Claire is invoke-only — nothing
+fires until you ask. For long unattended / AFK runs where no one is there to invoke her,
+set `CLAIRE_AUTO=1` for that run (the same per-machine opt-in style as
+`CLAIRE_GATE_STRICT`). When it is on *and* your prompt kicks off an autonomous run
+("scan and fix", "work the queue", "clear the backlog", `/autoloop`, …), Claire injects a
+standing instruction for the run: treat her as a per-judgement-call step — on every fork
+the run resolves itself, every plan it commits to, every file it writes, and anything
+outbound, run a Claire pass first. The de-priming is unchanged: every brief is still
+leak-checked before the critic sees it, and a brief that keeps leaning is parked for you
+rather than waved through. Claire still only critiques — she never auto-approves a
+decision. It stays off for interactive use, so "nothing fires until you invoke her" holds
+there; arming an unattended run is itself the invocation. Recommended on AFK machines:
+`CLAIRE_AUTO=1` together with `CLAIRE_GATE_STRICT=1` (after `/claire:doctor` confirms
+receipts fire), so a skipped audit hard-stops the run instead of warning into a log no one
+is reading. `/claire:doctor` reports whether the mode is armed.
+
 **Building on Claire? Turn on the trace.** Set `CLAIRE_DEBUG=1` and every critic
 dispatch surfaces a short under-the-hood trace — the leak-audit verdict, whether a
 receipt matched, and the gate's decision — so you can watch the de-priming work and

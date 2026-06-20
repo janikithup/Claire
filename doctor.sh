@@ -101,6 +101,16 @@ case "$reg" in
 esac
 echo ""
 
+echo "Autonomous mode (CLAIRE_AUTO)"
+auto="$(printf '%s' "${CLAIRE_AUTO:-}" | tr -d '[:space:]')"
+case "$auto" in
+  ""|0|false|False)
+    ok "off — Claire is invoke-only (the interactive default). Export CLAIRE_AUTO=1 for an unattended/AFK run to have her fire on every judgement call (see README, 'Running Claire during autonomous work')." ;;
+  *)
+    ok "ARMED — on an autonomous-run prompt, Claire's per-judgement-call standing instruction is injected for the run. Leave CLAIRE_AUTO unset for interactive work. Pair with CLAIRE_GATE_STRICT=1 so a skipped audit hard-stops rather than warns." ;;
+esac
+echo ""
+
 echo "Duplicate installs"
 dup=0
 if [ -d "$HOME/.claude" ]; then
