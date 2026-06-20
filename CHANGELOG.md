@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-06-20
+
+### Fixed
+- **The probe-auditor pre-check is dispatched by its namespaced name, and the leak-check names a third rationalization it must resist.** Two small tightenings to the `/claire:challenge` de-priming discipline, in the same skill:
+  - **Namespaced probe-auditor dispatch.** The "is this rigged?" pre-check — run before any probe that tests whether a behaviour fires — is now dispatched as `claire:probe-auditor`, not the bare name. A bare `probe-auditor` resolves to a workspace-local agent of the same name when one exists, silently running a drifted local copy instead of Claire's — and the de-priming receipt gate fires only on the `claire:` form, so a bare dispatch lost both at once. The chosen critic was already namespaced (Step 3); this closes the same gap on the Step 2 demand-characteristics pre-check (and the Step 1 routing row).
+  - **A third named rationalization for skipping the leak-check.** The leak-check already warns against two excuses ("my brief is already neutral", "the adversary will catch any lean anyway"); it now also names "the attacker is structurally de-primed, so a minimum-context critic can't be steered" — and why it is wrong: context-starving and leak-checking are **orthogonal**. Starvation controls the critic's own priors; the leak-audit controls whether the *brief* leans, and the brief is the one channel a starved critic must trust. A starved attacker handed a leaning brief is still steered. (Observed live as a real skip rationalization.)
+
 ## [0.7.1] - 2026-06-20
 
 ### Fixed
