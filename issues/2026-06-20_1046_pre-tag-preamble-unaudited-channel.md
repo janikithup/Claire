@@ -61,3 +61,7 @@ Lean: (3)+(1) — the persona belongs in the agent file, the attack-license is o
 
 ## Severity
 Spine-critical in principle (unaudited channel to the critic), but it requires the *caller* to actively place a steer before the tag — an anchored main could do this unknowingly while "setting up" the critic. Default-warn (strict off) means it currently only warns even when caught elsewhere. Prioritise for the next spine pass.
+
+## Status: resolved
+The pre-tag unaudited channel is closed in **v0.7.1** (shipped 2026-06-20) — the leak-audit now covers the whole critic prompt (candidate fix #2), with the all-tag-excision, exact-coda-strip, and valence-steer-auditor fixes the bump-gate surfaced. The deeper follow-up — replacing the fingerprint-matching machinery itself with hook-injection of the canonical brief (the recurring mole habitat) — continues as its own sprint: `issues/2026-06-20_1424_matching-machinery-redesign-hook-injection.md`.
+Date: 2026-06-20
