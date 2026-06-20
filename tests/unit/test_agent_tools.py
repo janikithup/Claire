@@ -2,8 +2,8 @@
 """
 UNIT TEST — claire agent tool-declaration integrity.
 
-BUG GUARDED (found 2026-06-19, filed from a field session that used Claire to
-cold-read a long document): three context-starved critics declared `tools: []`.
+BUG GUARDED (found 2026-06-19, while dogfooding Claire to cold-read a long
+document): three context-starved critics declared `tools: []`.
 Empirically an EMPTY tools list is read by the harness as "inherit ALL tools", NOT
 "none" — the session registry showed those agents as "All tools", while agents that
 declare a real list (e.g. `tools: TaskCreate`) show exactly that. So `tools: []` is a

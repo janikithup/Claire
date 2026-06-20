@@ -1,7 +1,7 @@
 # Autonomous queue handed targets that don't exist in this repo
 
 **Date:** 2026-06-20 09:35
-**Run:** unattended autonomous agent, `CLAIRE_AUTO` on, cwd `~/Claude/claire`
+**Run:** unattended autonomous agent, `CLAIRE_AUTO` on, cwd the Claire repo
 
 ## What happened
 
@@ -45,10 +45,10 @@ needed any of the five edits.
 
 ## Addendum — second run, 2026-06-20 09:38
 
-A later run widened the search beyond the cwd to the whole `~/Claude` tree and found
-a real web dashboard at `~/Claude/apps/a-separate-project/` (a 183 KB
-`dashboard.html` + a `js/` bundle + Playwright tests). So the prior "no web app
-exists" was scoped to the Claire repo only — a dashboard does exist in the tree.
+A later run widened the search beyond the cwd and found
+a real web dashboard in a separate, unrelated project elsewhere on the machine (an
+HTML dashboard + a `js/` bundle + Playwright tests). So the prior "no web app
+exists" was scoped to the Claire repo only — a dashboard does exist on the machine.
 
 But it is still **not** the queue's target. Checked each anchor against it:
 

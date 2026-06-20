@@ -2,10 +2,10 @@
 
 > **RESOLVED (in dev repo, pending release) — 2026-06-20 08:xx.** Fix (b) taken: an "Ignore ambient signal" clause added to all five context-starved critics (`blank-slate-advisor`, `brief-leak-auditor`, `failure-mode-attacker`, `over-capture-triage-verifier`, `probe-auditor`). Fix (a) — stripping env from the dispatch — is not implementable: the env block is harness-injected into every subagent and the plugin cannot suppress it, so the persona must defend against it. Diagnosis refined: the leak is conditional on **semantic adjacency** (a branch named after the question), not on env presence; unrelated env is already filtered. Verified — pre-fix leaked 3/3 live, controlled A/B with the clause as sole variable: 2/2 leak without → 3/3 clean with. Pinned: `tests/evals/fixtures/blind_read_ambient_env_leak.json`. Finding: `docs/blank-slate-finding.md`. CHANGELOG: `[Unreleased]`. **Not yet live for users** — ships on the next marketplace release (bump + tag + push).
 
-> Filed here in the Claire dev repo because the standing queue path `~/.claude/claire/issues/` was sandbox-blocked from the calling session (a-separate-project). Move if it belongs elsewhere.
+> Filed here in the Claire dev repo because the standing private issue queue was sandbox-blocked from the calling session. Move if it belongs elsewhere.
 
 ## What I invoked
-`/claire:blank` (in the a-separate-project repo, outside ~/Claude/claire) for a cold outside read on a navigation/home design decision. The de-priming flow ran correctly end-to-end: brief-leak-auditor flagged a lean (v1), I applied its neutral rewrite, re-audited clean (v2, receipt 0ea9cc19e6a945d2), and dispatched `claire:blank-slate-advisor` with the `[DEPRIMED-BRIEF]` (gate PASS, receipt matched, len 1218).
+`/claire:blank` (in a separate project, outside the Claire repo) for a cold outside read on a navigation/home design decision. The de-priming flow ran correctly end-to-end: brief-leak-auditor flagged a lean (v1), I applied its neutral rewrite, re-audited clean (v2, receipt 0ea9cc19e6a945d2), and dispatched `claire:blank-slate-advisor` with the `[DEPRIMED-BRIEF]` (gate PASS, receipt matched, len 1218).
 
 ## How it fell short
 The blank-slate-advisor is specified to reason from nothing but the de-primed brief. Its read opened with:

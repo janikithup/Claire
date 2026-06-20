@@ -1,6 +1,6 @@
 # Leak-audit "receipt loop" friction on plan-attack briefs — 2026-06-20 08:15
 
-> Triaged from a field debrief (a-field session). Spine-delicate (roadmap C) — flagged for a design pass, NOT a quick fix. Report 2 said it filed this to Claire's queue but no file landed, so capturing it here.
+> Triaged from a field debrief. Spine-delicate (roadmap C) — flagged for a design pass, NOT a quick fix. Report 2 said it filed this to Claire's queue but no file landed, so capturing it here.
 
 ## What the caller reported
 Dispatching a plan to the critic, the gate "kept demanding a leak-audit receipt I never cleared" — the auditor found a lean on every revision of the brief, so the gate stayed armed. The caller's framing: *"for a plan-attack, neutrality isn't even the goal."*

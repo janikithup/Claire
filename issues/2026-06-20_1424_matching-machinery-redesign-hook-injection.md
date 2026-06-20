@@ -6,7 +6,7 @@
 The de-priming gate today proves "audited == dispatched" by computing a normalised text *fingerprint* of the brief on both sides (`brief_region`, `strip_coda`, excise-tags, `is_clean_verdict`) and comparing by exact equality. Every hole has been an edge case in that normalisation — because the orchestrator builds the auditor-text and critic-text *separately* and the harness mutates one (the coda). Patching normalisation is whack-a-mole.
 
 ## The mechanism (TESTED VIABLE — 2026-06-20)
-A PreToolUse hook's `updatedInput` **does** rewrite a subagent's prompt — confirmed when the hook is loaded at **session start** (a subagent answered the rewritten arithmetic `10 + 10` → 20; a Read `file_path` rewrite A→B also took effect). The earlier same-session negative was a mid-session-load confound. Recorded in `internal hook-design notes` (2026-06-20).
+A PreToolUse hook's `updatedInput` **does** rewrite a subagent's prompt — confirmed when the hook is loaded at **session start** (a subagent answered the rewritten arithmetic `10 + 10` → 20; a Read `file_path` rewrite A→B also took effect). The earlier same-session negative was a mid-session-load confound. Recorded in internal hook-design notes (2026-06-20).
 
 ## The design
 - On a CLEAN leak-audit, the canonical de-primed brief is the **single source of truth** (the receipt *is* the brief, not a fingerprint of it).
@@ -28,5 +28,5 @@ A PreToolUse hook's `updatedInput` **does** rewrite a subagent's prompt — conf
 
 ## History / pointers
 - Pre-tag channel + 0.7.1 fix: `issues/2026-06-20_1046_pre-tag-preamble-unaudited-channel.md` (resolved by 0.7.1).
-- Tested mechanism + the startup-load caveat: `internal hook-design notes` (2026-06-20).
+- Tested mechanism + the startup-load caveat: internal hook-design notes (2026-06-20).
 - Reusable re-gate harness: `tests/evals/regate_0_7_1.js`.
