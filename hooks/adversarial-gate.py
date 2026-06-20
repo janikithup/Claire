@@ -220,10 +220,13 @@ def main():
             record_pre("PASS", len(brief))
             new_input = dict(ti)
             new_input["prompt"] = brief
-            # The matcher reads the nonce from prompt OR description; the critic only ever reads
-            # prompt, but clear description too so no orchestrator-supplied text survives the overwrite.
-            new_input.pop("description", None)
-            emit_allow(new_input)  # inject the audited brief; no extra context (keep the rewrite clean)
+            # Overwrite ONLY `prompt`. Keep every other field — including `description`, a
+            # REQUIRED Agent/Task field. The critic reads only `prompt` (which we replace), so a
+            # label left in `description` never reaches it; but DROPPING a required field makes the
+            # harness reject the whole dispatch downstream of this hook's fail-open net — which
+            # hard-blocked every receipted dispatch in 0.8.0/0.8.1. (A non-content label is no
+            # de-priming channel, so there is nothing to gain by removing it.)
+            emit_allow(new_input)  # inject the audited brief over the orchestrator's prompt
             return
         # nonce present but no fresh receipt -> fail closed
         log("NORECEIPT agent=%s nonce=%s (no fresh receipt)" % (agent, nonce))

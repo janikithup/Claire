@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-06-21
+
+### Fixed
+- **Critical: de-priming injection no longer hard-blocks the very dispatch it protects.** When 0.8.0/0.8.1 rewrote a critic dispatch to inject the audited brief, it dropped a field (`description`) that the Agent/Task tool **requires** — so the harness rejected the whole rewritten dispatch *after* the hook returned (past its fail-open net), and every properly-receipted adversarial dispatch, including the live `/claire:challenge` path, died with a hard error instead of running. The gate now overwrites **only** `prompt` and preserves every other field. (The dropped field is a UI label the critic never reads, so removing it bought no de-priming and only broke the dispatch.) Pinned by a regression test asserting the injected dispatch keeps all required fields. Caught by the live end-to-end injection probe — the one check the unit/eval layers could not substitute for.
+
 ## [0.8.1] - 2026-06-20
 
 ### Fixed

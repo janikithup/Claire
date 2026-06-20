@@ -368,18 +368,22 @@ def test_every_injected_critic_is_tool_less():
 
 
 @case
-def test_inject_clears_description_channel():
-    """SPINE GUARD: the matcher reads the nonce from prompt OR description, but the critic only
-    reads prompt. On inject the gate must clear `description` so no orchestrator-supplied text
-    survives the overwrite in a field the gate also treats as content."""
+def test_inject_preserves_required_dispatch_fields():
+    """BUG GUARDED (live 2026-06-21 — hard-blocked 0.8.0/0.8.1): the Agent/Task tool REQUIRES
+    `description`. updatedInput REPLACES the whole tool_input, so the injected object must carry
+    every required field — only `prompt` may change. Dropping `description` made the harness
+    reject the whole dispatch *downstream* of this hook's fail-open net, hard-blocking every
+    receipted critic call (worse than not injecting). The critic reads only `prompt`, so a label
+    left in `description` is no de-priming channel — there is nothing to gain by removing it."""
     brief = "Situation: pick a vendor. Outside read?"
     out, _ = run_gate(
         {"tool_input": {"subagent_type": "claire:failure-mode-attacker",
-                        "prompt": "[CLAIRE-RECEIPT:desc01] x", "description": "a steer in the description"}},
+                        "prompt": "[CLAIRE-RECEIPT:desc01] decoy", "description": "attack the vendor plan"}},
         receipts=[("desc01", brief, 10)])
     ui = _hook_out(out)["updatedInput"]
-    assert ui["prompt"] == brief
-    assert ui.get("description", "") == "" or "description" not in ui, "description must be cleared on inject"
+    assert ui["prompt"] == brief, "prompt must be overwritten with the audited brief"
+    assert ui.get("subagent_type") == "claire:failure-mode-attacker", "subagent_type must survive"
+    assert ui.get("description"), "the required `description` field must be preserved, not dropped"
 
 
 @case
