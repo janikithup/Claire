@@ -1,101 +1,98 @@
 #!/usr/bin/env python3
 """
-claire de-priming RECEIPT writer.
+claire de-priming RECEIPT writer — INJECTION design (>=0.8.0).
 
-PostToolUse hook on the Agent/Task tool. FAIL-OPEN: any error => do nothing,
-silently. A receipt-writer bug must never disrupt a real dispatch.
+PostToolUse hook on the Agent/Task tool. FAIL-OPEN: any error => do nothing.
 
-Why this exists: the de-priming gate (adversarial-gate.py) used to trust a
-self-typed [DEPRIMED-BRIEF] tag — which an anchored main can add WITHOUT ever
-running the leak-check. That made the gate honour-system. This hook closes the
-loophole: it watches the brief-leak-auditor finish, and only when the auditor
-returns a CLEAN verdict (GENUINELY-NEUTRAL, no LEAN) does it write a short-lived
-"receipt" — a normalised fingerprint of the exact brief that passed. The gate
-then demands a matching receipt, not just the tag. A receipt cannot exist unless
-the auditor genuinely ran on that text, so typing the tag no longer buys silence.
+NOTE on registration: a plugin hooks.json PostToolUse hook does NOT fire on macOS
+Desktop, so this writer is registered in ~/.claude/settings.json by setup-receipts.sh
+(the same mechanism as 0.4.2+). It still reads the same Agent-result payload.
 
-Receipt = a small JSON file under hooks/.receipts/ : {ts, text, len}. They expire
-fast and are pruned opportunistically; the dir is git-ignored.
+What it does: it watches brief-leak-auditor finish, and on a CLEAN verdict
+(GENUINELY-NEUTRAL, no asserted lean) it stores the audited brief VERBATIM, keyed by
+the orchestrator-chosen nonce carried in the auditor's prompt as [CLAIRE-RECEIPT:<nonce>].
+The companion PreToolUse gate then looks that nonce up on the critic dispatch and
+INJECTS the stored brief — so the critic reasons only from text the auditor cleared.
+
+There is no fingerprint and no round-trip: the orchestrator already knows the nonce
+(it chose it and put it on both the audit and the dispatch), so this writer never has
+to communicate anything back. Receipt = .receipts/<nonce>.json : {ts, nonce, brief}.
+They expire fast (TTL) and are pruned opportunistically; the dir is git-ignored.
 """
-import sys, os, json, time, hashlib, re, glob
+import sys, os, json, time, re, glob
 
-NEUTRAL_RE = re.compile(r"genuinely-neutral", re.IGNORECASE)
-# The verdict token the auditor emits when it DOES find a lean: uppercase "LEAN-<option>"
-# (agent contract: the verdict, on its own line). Case-sensitive so the auditor's lowercase
-# prose about leaning ("lean-verdict", "a real lean") is never mistaken for a verdict.
+# The orchestrator's de-priming nonce, carried in the auditor prompt and the critic dispatch.
+RECEIPT_SENTINEL_RE = re.compile(r"\[CLAIRE-RECEIPT:([A-Za-z0-9_-]+)\]")
+
+# --- verdict parsing (fold-in 2: anchor to the verdict LINE, tolerant of its shape) ---------
+# A lean verdict token: uppercase LEAN-<option>. Case-sensitive so the auditor's lowercase
+# prose ("a real lean", "leans neither way") is never mistaken for the verdict token.
 LEAN_TOKEN = re.compile(r"(?<![A-Za-z])LEAN-\w")
-
-
-# A LEAN-<x> token only counts as the VERDICT when it is NOT a declined/hypothetical
-# mention. The auditor discusses leans it DECLINED even when it passes ("I considered a
-# faint LEAN-One but am declining") — those are not the verdict.
+NEUTRAL_RE = re.compile(r"genuinely-neutral", re.IGNORECASE)
+# Tolerant verdict-LABEL line match (mirrors tests/evals/run_evals.py): catches
+# "**Verdict** — GENUINELY-NEUTRAL", "Verdict: LEAN-x", "Verdict\nNEUTRAL", etc. — without
+# requiring a brittle literal "VERDICT:" prefix the live auditor is not contracted to emit.
+VERDICT_LABEL_RE = re.compile(
+    r"verdict\b\W{0,4}\s*(?:genuinely[- ]?)?(LEAN|NEUTRAL)", re.IGNORECASE)
+# Contexts in which a LEAN-<x> token is NOT an asserted verdict: the auditor discussing a
+# lean it declined, or quoting one as an example. Used by the asserted-LEAN backstop so a
+# clean pass that merely mentions a lean is not misread as leaning.
 DECLINED_LEAN_RE = re.compile(
-    r"(?:declin|considered|faint|reject|hypothetical|err[- ]?toward|tempt|"
-    r"not\s+a\s+real|no\s+real\s+lean|weigh|might\s+call|could\s+call|nearly)",
-    re.IGNORECASE)
+    r"(?:declin|considered|faint|reject|hypothetical|err[- ]?toward|tempt|not\s+a\s+real|"
+    r"no\s+real\s+lean|weigh|might\s+call|could\s+call|nearly|example|e\.g\.|such\s+as|"
+    r"or\s+lean)", re.IGNORECASE)
+
+
+def _asserted_lean(text):
+    """True if `text` contains a LEAN-<x> token that is NOT in a declined/example context."""
+    for m in LEAN_TOKEN.finditer(text):
+        ctx = text[max(0, m.start() - 48):m.start()].lower()
+        if not DECLINED_LEAN_RE.search(ctx):
+            return True
+    return False
 
 
 def is_clean_verdict(resp):
-    """True iff the auditor PASSED the brief (verdict GENUINELY-NEUTRAL, no asserted lean).
+    """True iff the auditor PASSED the brief (verdict NEUTRAL, no asserted lean).
 
-    Decision rule, conservative toward de-priming:
-      1. If any ASSERTED LEAN-<x> token is present (a LEAN- token NOT sitting in a
-         declined/hypothetical context), the brief leaks -> NOT clean, no matter what
-         else the response says.
-      2. Otherwise, clean iff a non-negated GENUINELY-NEUTRAL appears.
-
-    Why asserted-lean wins outright rather than the older "neutral appears before lean"
-    ordering: when the auditor flags a lean it often OPENS by dismissing neutrality
-    ("GENUINELY-NEUTRAL - does not apply here ... Verdict: LEAN-x"). The clean token then
-    sits at position 0, un-negated by any preceding "not", so the ordering rule read it as
-    clean and wrote a receipt for a LEANING brief — a de-priming enforcement hole (the gate
-    then goes silent on a primed dispatch). Found 2026-06-19 from the live auditor's own
-    output. The auditor still discusses DECLINED leans when it passes ("considered a faint
-    LEAN-One but declining"); those carry declining language and do not count as asserted.
-    Erring toward "not clean" on ambiguity is the safe direction — it nags rather than
-    silently certifying a leak."""
-    for m in LEAN_TOKEN.finditer(resp):
-        ctx = resp[max(0, m.start() - 48):m.start()].lower()
-        if not DECLINED_LEAN_RE.search(ctx):
-            return False  # an asserted lean verdict -> never clean
-    for m in NEUTRAL_RE.finditer(resp):
-        before = resp[max(0, m.start() - 6):m.start()].lower()
+    Verdict-LINE anchored, conservative toward de-priming:
+      1. If a verdict LABEL line is present, it is authoritative: LEAN -> not clean;
+         NEUTRAL -> clean UNLESS an asserted LEAN appears AFTER it (a reversal).
+      2. No label line: an asserted LEAN anywhere -> not clean.
+      3. Else: a non-negated GENUINELY-NEUTRAL -> clean.
+      4. Nothing decisive -> NOT clean (fail-closed: write no receipt, the gate nags).
+    Erring toward "not clean" on ambiguity is the safe direction."""
+    m = VERDICT_LABEL_RE.search(resp)
+    if m:
+        if m.group(1).upper() == "LEAN":
+            return False
+        return not _asserted_lean(resp[m.end():])  # NEUTRAL line, clean unless reversed after
+    if _asserted_lean(resp):
+        return False
+    for nm in NEUTRAL_RE.finditer(resp):
+        before = resp[max(0, nm.start() - 6):nm.start()].lower()
         if re.search(r"(?:not|n't)\s*$", before):
             continue
         return True
     return False
 
+
 AUDITOR_NAMES = {"brief-leak-auditor"}
 RECEIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".receipts")
 TTL_SECONDS = 2 * 60 * 60  # a receipt is valid for 2 hours, then ignored/pruned
-# CLAIRE_DEBUG=1 surfaces a one-line trace of each leak-audit — the parsed verdict and
-# whether a receipt was written — so a builder can watch the de-priming work. OFF by
-# default; pure visibility, it NEVER changes whether a receipt is written.
 DEBUG = os.environ.get("CLAIRE_DEBUG", "").strip() not in ("", "0", "false", "False")
 
-# Event log (0.6.0) — OBSERVABILITY only; never affects whether a receipt is written.
-# Import-guarded so an install missing the shared logger (or the copy-one-file unit harness)
-# can't crash the writer on a failed import — claire_log stays None and logging no-ops.
+# Event log (0.6.0) — OBSERVABILITY only. Import-guarded so a copy-one-file unit harness or
+# an install missing the logger can't crash the writer.
 try:
     import claire_log
 except Exception:
     claire_log = None
 
-# Frozen coda template — MUST match adversarial-gate.py. Import-guarded with an inline fallback
-# so a copy-one-file unit harness never crashes. strip_coda removes ONLY this exact text.
-try:
-    from claire_brief import CANONICAL_CODA
-except Exception:
-    CANONICAL_CODA = (
-        "[standing invitation] if you disagree with this approach or see a problem with it, "
-        "say so and explain why - before or during execution")
-
 _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def _plugin_version():
-    """Best-effort version of THIS cached build, so the reader can dedup the N-version
-    double-write. -> None on any error (fail-open)."""
     try:
         with open(os.path.join(_HOOK_DIR, "..", ".claude-plugin", "plugin.json")) as fh:
             return json.load(fh).get("version")
@@ -107,8 +104,8 @@ PLUGIN_VERSION = _plugin_version()
 
 
 def record_post(clean, proof_written, agent, dispatch_id, brief_len):
-    """Log one 'post' event per auditor completion. OBSERVABILITY only — fail-open; the lean
-    DIRECTION never persists (the logger binarises the verdict to neutral/leaning)."""
+    """Log one 'post' event per auditor completion. OBSERVABILITY only — the lean DIRECTION
+    never persists (the logger binarises the verdict to neutral/leaning)."""
     if not claire_log:
         return
     try:
@@ -121,69 +118,19 @@ def record_post(clean, proof_written, agent, dispatch_id, brief_len):
 
 
 def emit_trace(msg):
-    """Emit a one-line under-the-hood trace to the model (PostToolUse additionalContext),
-    only when CLAIRE_DEBUG is on. Visibility only — never affects the receipt write."""
     out = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}
     print(json.dumps(out))
 
 
-def normalise(text):
-    """Lowercase + collapse all whitespace to single spaces + strip.
-
-    Containment matching against this form is robust to the wrapping the critic
-    prompt adds (persona preamble, the tag line, a trailing attack-license)."""
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
-
-
-# The harness appends a standing-invitation coda to a subagent prompt AFTER the
-# PreToolUse gate has read it but BEFORE this PostToolUse hook reads it. So the brief
-# this hook fingerprints carries a trailing coda the gate's view never had, and the
-# two fingerprints would never match. Cut the (already-normalised) brief at the coda
-# marker so BOTH hooks fingerprint the brief ALONE. No-op when no coda is present
-# (e.g. an install whose CLAUDE.md carries no subagent-latitude guidance). Observed
-# live 2026-06-17; the marker is the harness's own stable label for the injected coda.
-TAG = "[DEPRIMED-BRIEF]"
-
-
-def strip_coda(norm_text):
-    """MUST stay byte-identical to adversarial-gate.py's strip_coda: remove ONLY the exact
-    CANONICAL_CODA, NOT arbitrary text after the [standing invitation] marker (0.7.1 coda-tail
-    fix — the old first-marker-anywhere cut let a steer after the marker ride through). Operates
-    on already-normalised text."""
-    coda = re.sub(r"\s+", " ", CANONICAL_CODA.lower()).strip()
-    return re.sub(r"\s+", " ", norm_text.replace(coda, " ")).strip()
-
-
-def brief_region(text):
-    """The CANONICAL brief = the WHOLE prompt with EVERY [DEPRIMED-BRIEF]
-    delimiter excised, coda-stripped + normalised.
-
-    This MUST stay byte-identical to adversarial-gate.py's brief_region(): the receipt
-    fingerprints this unit and the gate matches it by EXACT equality. If the two extractions
-    drift, the seam reopens.
-
-    0.7.1 widened the unit from the AFTER-tag region to the WHOLE prompt (preamble included),
-    to close the pre-tag unaudited-channel (issue 2026-06-20_1046): any persona/attack-license
-    text the orchestrator puts BEFORE the tag now reaches the critic AND is inside the audited+
-    matched unit, so a steer smuggled into the preamble changes the fingerprint and is caught
-    by the auditor (if it audited the whole prompt) or by a receipt mismatch (if it did not).
-    EVERY tag occurrence is excised, not just the first (a pure delimiter with no steer value;
-    excision replaces it with a space and never deletes surrounding text, so any real steer
-    survives and still forces a mismatch). First-only was wrong once the auditor is dispatched
-    WITHOUT the tag (skill Step 3.1): if a pasted artifact QUOTES the tag, the auditor side
-    excises that quoted tag (its first-and-only one) while the critic side excises the real
-    delimiter and the quoted tag survives — the regions diverge and a faithfully-audited brief
-    draws a false NORECEIPT (0.7.1 Finding 1). Excising all copies converges them.
-    The consequence still holds: the orchestrator must audit the BYTE-IDENTICAL whole prompt it
-    dispatches — a wrapper on the auditor prompt that the critic lacks (correctly) fails to
-    match, because the audited and dispatched text genuinely differ."""
-    norm = strip_coda(normalise(text))
-    norm = norm.replace(normalise(TAG), " ")  # excise EVERY tag (pure delimiter, no steer value)
-    return re.sub(r"\s+", " ", norm).strip()
+def stored_brief(prompt):
+    """The brief to store/inject = the auditor's prompt with the [CLAIRE-RECEIPT:<nonce>]
+    marker removed (cosmetic: the critic never sees the implementation token) and outer
+    whitespace trimmed. Everything else — persona/attack-license, body, harness coda — is
+    kept VERBATIM; there is no normalisation."""
+    return RECEIPT_SENTINEL_RE.sub("", prompt or "").strip()
 
 
 def prune(now):
-    """Best-effort removal of expired receipts so the dir never grows unbounded."""
     try:
         for path in glob.glob(os.path.join(RECEIPT_DIR, "*.json")):
             try:
@@ -198,13 +145,9 @@ def prune(now):
 
 
 def response_text(data):
-    """Pull the auditor's returned text out of the PostToolUse payload.
-
-    The agent output arrives under different keys across harness versions, and may
-    be a string, a dict, or a list of content blocks — so we stringify defensively.
-    If no known response key is present we fall back to the whole payload MINUS
-    tool_input, so the audited brief's own wording can never be mistaken for the
-    auditor's verdict."""
+    """Pull the auditor's returned text out of the PostToolUse payload, stringifying
+    defensively across harness shapes. Falls back to the whole payload MINUS tool_input so the
+    audited brief's own wording can never be mistaken for the auditor's verdict."""
     parts = []
     for key in ("tool_response", "tool_result", "response", "output", "result"):
         if key in data:
@@ -221,7 +164,6 @@ def main():
     data = json.loads(raw) if raw.strip() else {}
     ti = data.get("tool_input", {}) or {}
 
-
     atype = (ti.get("subagent_type") or ti.get("agentType") or ti.get("agent_type")
              or data.get("subagent_type") or "")
     atype_bare = str(atype).strip().split(":")[-1]
@@ -230,42 +172,40 @@ def main():
 
     brief = ti.get("prompt") or ti.get("description") or ""
     resp = response_text(data)
-    # Content-free correlation id (harness tool-call id) joining this 'post' audit to its
-    # 'pre' gate event. Confirmed present in PreToolUse; may be absent in PostToolUse — the
-    # logger omits it when None, and per-event metrics still compute without it.
     dispatch_id = data.get("tool_use_id")
+    m = RECEIPT_SENTINEL_RE.search(brief)
+    nonce = m.group(1) if m else None
     clean = is_clean_verdict(resp)
-    norm = brief_region(brief)
+    to_store = stored_brief(brief)
     proof_written = False
-    digest = None
 
-    # A receipt is written ONLY for a clean verdict on a non-empty brief — unchanged from
-    # before; the surrounding event logging is purely additive.
-    if clean and norm:
+    # A receipt is written ONLY for a clean verdict on a non-empty, nonce-tagged brief. No
+    # nonce -> the orchestrator did not run the handshake; nothing to key a receipt by, so the
+    # critic dispatch will (correctly) fail closed.
+    if clean and nonce and to_store:
         now = time.time()
         prune(now)
         try:
             os.makedirs(RECEIPT_DIR, exist_ok=True)
-            digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
-            with open(os.path.join(RECEIPT_DIR, digest + ".json"), "w") as fh:
-                json.dump({"ts": now, "text": norm, "len": len(norm)}, fh)
+            with open(os.path.join(RECEIPT_DIR, nonce + ".json"), "w") as fh:
+                json.dump({"ts": now, "nonce": nonce, "brief": to_store}, fh)
             proof_written = True
         except Exception:
             pass
 
-    # One 'post' event per auditor completion (clean or leaning) — binary verdict only.
-    record_post(clean, proof_written, atype, dispatch_id, len(norm))
+    record_post(clean, proof_written, atype, dispatch_id, len(to_store))
 
     if DEBUG:
         if not clean:
-            label = "LEAN" if LEAN_TOKEN.search(resp) else "not-clean"
+            label = "LEAN" if _asserted_lean(resp) or (VERDICT_LABEL_RE.search(resp) and
+                     VERDICT_LABEL_RE.search(resp).group(1).upper() == "LEAN") else "not-clean"
             emit_trace("[CLAIRE TRACE] receipt: verdict=%s · no receipt written" % label)
-        elif not norm:
-            emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN (GENUINELY-NEUTRAL) · "
-                       "empty brief, no receipt written")
+        elif not nonce:
+            emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN · brief carried no "
+                       "[CLAIRE-RECEIPT:<id>] marker, no receipt written")
         else:
-            emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN (GENUINELY-NEUTRAL) · "
-                       "wrote digest %s (brief len %d)" % (digest or "?", len(norm)))
+            emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN · wrote nonce %s (brief len %d)"
+                       % (nonce, len(to_store)))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-06-20
+
+### Changed
+- **De-priming now works by INJECTING the audited brief into the critic — replacing the fingerprint-matching that generated every recent spine bug.** Until now the gate proved "the brief the critic gets was leak-checked" by computing a normalised text *fingerprint* of the brief on both sides (auditor and critic) and comparing them; because the orchestrator built those two texts separately and the harness mutates one of them (a "[standing invitation]" coda), every hole was an edge case in that normalisation — coda asymmetry, a pre-tag preamble, a coda-tail steer, a tag-quoting false alarm. 0.8.0 deletes the comparison. On a clean leak-audit the audited brief is stored **verbatim**, keyed by a one-time id the orchestrator places on *both* the audit and the critic dispatch; a PreToolUse hook then looks that id up and **overwrites the critic's whole prompt with the stored brief**. The critic reasons from exactly what the auditor cleared, by construction — there is nothing to normalise and nothing to compare.
+  - **Consequences:** an anchored orchestrator **cannot** send un-audited or steered text to the critic (its prompt is discarded); the critic is fully context-starved; and the entire fingerprint / coda-stripping / `[DEPRIMED-BRIEF]`-tag machinery — every recent bug's habitat — is gone. Verified live on macOS Desktop: a plugin hook's prompt-rewrite reaches the subagent, and the harness coda appends to the *rewritten* prompt (the original does not survive).
+  - **Folded in:** the un-gated `Plan`/`Explore` fallback is **eliminated** (under injection it could silently de-fang the critic); **every critic is now fully tool-less** (closing a runtime-file/web-read channel — a fresh-context re-gate caught `dialectical-scout` silently inheriting all tools because it had no `tools:` line); and the clean-verdict check is anchored to the auditor's verdict line, killing a false "no receipt" warning when a clean audit merely quotes a lean example.
+  - **Pinned by** 101 unit tests (byte-for-byte injection; fail-closed on a forged/absent/expired id; a frozen real-auditor-prose corpus for the verdict parser; a coverage test asserting every injected critic is tool-less) and a 3-arm free-form eval graded by the live leak-auditor, with a fresh-context adversarial re-gate that found — and this release fixes — the one real hole. The receipt writer's `setup-receipts.sh` registration is unchanged.
+
 ## [0.7.2] - 2026-06-20
 
 ### Fixed

@@ -5,3 +5,6 @@ hooks/.receipts/
 __pycache__/
 *.pyc
 .DS_Store
+
+# probe runtime artifact
+tests/probes/confirm1_plugin_inject/inject-probe.log

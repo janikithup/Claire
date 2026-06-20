@@ -55,10 +55,9 @@ def _run(script_path, payload, receipts=None, env=None, with_logger=True):
             rdir = os.path.join(td, ".receipts")
             os.makedirs(rdir, exist_ok=True)
             now = time.time()
-            for i, (text, age) in enumerate(receipts):
-                norm = _normalise(text)
-                with open(os.path.join(rdir, "r%d.json" % i), "w") as fh:
-                    json.dump({"ts": now - age, "text": norm, "len": len(norm)}, fh)
+            for nonce, brief, age in receipts:
+                with open(os.path.join(rdir, nonce + ".json"), "w") as fh:
+                    json.dump({"ts": now - age, "nonce": nonce, "brief": brief}, fh)
         run_env = dict(os.environ)
         for var in ("CLAIRE_DEBUG", "CLAIRE_GATE_STRICT"):
             run_env.pop(var, None)
@@ -100,10 +99,10 @@ def test_gate_logs_pass_decision_with_receipt():
     """BUG GUARDED: a silent PASS records nothing, so the log undercounts the de-primed
     dispatches the gate let through. A matched receipt must still log a 'pre' event with
     gate_decision=PASS."""
-    brief = "\nNeutral situation: a team plans X. Find failure modes."
+    brief = "Neutral situation: a team plans X. Find failure modes."
     out, events = _run(GATE, {"tool_input": {"subagent_type": "claire:failure-mode-attacker",
-                                             "prompt": TAG + brief}},
-                       receipts=[(brief, 10)])
+                                             "prompt": "[CLAIRE-RECEIPT:lg01] x"}},
+                       receipts=[("lg01", brief, 10)])
     assert len(events) == 1
     assert events[0]["event"] == "pre" and events[0]["gate_decision"] == "PASS"
 
@@ -199,7 +198,7 @@ def test_receipt_logs_post_neutral_with_proof():
     verdict=neutral, proof_written=True, the agent slot, and the dispatch id."""
     out, events = _run(RECEIPT, {
         "tool_input": {"subagent_type": "claire:brief-leak-auditor",
-                       "prompt": "Two vendors, one slot — which, and why? State the trade-offs."},
+                       "prompt": "[CLAIRE-RECEIPT:lp01]\nTwo vendors, one slot — which, and why? State the trade-offs."},
         "tool_response": "GENUINELY-NEUTRAL\nBoth stated flatly.",
         "tool_use_id": "tu_post1"})
     assert len(events) == 1, "auditor completion must log exactly one post event, got %d" % len(events)

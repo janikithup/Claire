@@ -1,5 +1,11 @@
 # Replace fingerprint-matching with hook-injection of the canonical brief — SPRINT KICKOFF — 2026-06-20 14:24
 
+> **Design response → `docs/injection-redesign.md` (v2, 2026-06-20).** Architecture
+> designed, adversarially reviewed (4 fresh-context critics found a spine-critical
+> hole + the plugin-PostToolUse-doesn't-fire-on-Desktop fact), and revised. **Build
+> is gated on confirm #1** — the one thing only a fresh session can answer — now a
+> turnkey probe at `tests/probes/confirm1_plugin_inject/`. Run it, then build.
+
 > **This is the next sprint.** 0.7.1 shipped (closes the pre-tag channel via whole-prompt audit + fingerprint-matching). This sprint removes the *fingerprint-matching itself* — the brittle layer that has generated every spine "mole" (coda asymmetry → pre-tag preamble → coda-tail → tag-quoting false-NORECEIPT → valence under-catch). Replace it with a deterministic hook that INJECTS the audited brief into the critic.
 
 ## Why (the recurring hole-shape)

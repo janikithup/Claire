@@ -1,119 +1,75 @@
 #!/usr/bin/env python3
 """
-claire de-priming gate.
+claire de-priming gate — INJECTION design (>=0.8.0).
 
 PreToolUse hook on the Agent/Task tool. FAIL-OPEN by default: any error => allow
 silently, so a gate bug can never block a real dispatch.
 
-What changed in v0.2.0 — the gate no longer trusts a self-typed tag.
-Previously: an adversarial dispatch carrying the literal [DEPRIMED-BRIEF] tag
-passed silently. But the main agent types that tag itself, so it could skip the
-leak-check and still silence the gate — honour-system enforcement an anchored
-main rationalises straight past.
+What this does, and why it replaces fingerprint-matching:
+The de-priming spine is "the critic must never reason from text no leak-checker
+cleared." Earlier versions PROVED that by fingerprint-matching the audited brief
+against the dispatched one — brittle, because the orchestrator built the two texts
+separately and the harness mutated one. This version removes the comparison: on a
+clean leak-audit the companion PostToolUse hook stores the audited brief VERBATIM,
+keyed by an orchestrator-chosen nonce carried as [CLAIRE-RECEIPT:<nonce>]. This gate
+looks the nonce up and OVERWRITES the critic's whole prompt with the stored brief via
+updatedInput. The critic reasons from exactly-what-was-audited by construction; an
+orchestrator-supplied steer is discarded by the overwrite, and a dispatch with no
+genuine receipt fails closed.
 
-Now: the tag alone buys NOTHING. Silence requires a *receipt* — written by the
-companion PostToolUse hook (record-audit-receipt.py) only when brief-leak-auditor
-actually returned a clean verdict on this exact brief. The decision tree:
+Decision tree:
+  - not a de-priming dispatch                      -> silent pass
+  - carries a nonce with a fresh receipt           -> INJECT the audited brief (allow)
+  - carries a nonce but NO fresh receipt           -> NORECEIPT warning (fail closed)
+  - de-priming dispatch with no nonce at all       -> REMIND (run the leak-audit)
 
-  - not an adversarial dispatch              -> silent pass
-  - adversarial, brief has a matching receipt -> PASS  (silent)
-  - adversarial, tag present but NO receipt  -> NORECEIPT warning (the skip is now
-                                                visible; the tag can't hide it)
-  - adversarial, no tag at all               -> REMIND (de-priming checklist)
-
-Set the env var CLAIRE_GATE_STRICT=1 to make the two failure states BLOCK the
-dispatch (PreToolUse deny) instead of warn — recommended on your own machines,
-off by default so a public install can never hard-block on a gate quirk.
+Set CLAIRE_GATE_STRICT=1 to make the two failure states BLOCK (PreToolUse deny)
+instead of warn — recommended on your own machines, off by default so a public
+install can never hard-block on a gate quirk.
 """
-import sys, os, json, time, re, glob, datetime
+import sys, os, json, time, re, datetime
 
 ADVERSARIAL_AGENTS = {
     "blank-slate-advisor", "failure-mode-attacker", "affected-actor-simulator",
     "probe-auditor", "dialectical-scout", "over-capture-triage-verifier",
 }
-# brief-leak-auditor is DELIBERATELY NOT listed: it is the de-priming CHECKER (it
-# reads a brief to judge whether it leaks the author's lean), not an adversary that
-# needs a de-primed brief. Gating it would circularly demand a [DEPRIMED-BRIEF] tag on
-# the very tool that verifies de-priming. Any agent-list sync check should treat this
-# one agents/ file as an intentional non-member, not a missing entry.
+# brief-leak-auditor is DELIBERATELY NOT listed: it is the de-priming CHECKER, not an
+# adversary that needs a de-primed brief. Gating it would circularly demand a receipt on
+# the very tool that earns receipts. The name check below is authoritative over the phrase net.
 
-# Secondary net for the rare case where the agent-type field does not carry the
-# custom agent's name (harness-dependent). Deliberately NARROW — only markers
-# that essentially never appear in ordinary, non-adversarial briefs.
+# Secondary net for the rare case where the agent-type field does not carry the custom
+# agent's name. REMIND-only: it carries no nonce, so it can never inject — only nudge.
 ADVERSARIAL_PHRASES = (
     "devil's advocate", "steel-man", "steelman", "de-prime", "deprime",
     "blank-slate advisor",
 )
-# Match phrases only at WORD boundaries, so "deprime" does not fire inside
-# "deprimed" (e.g. a brief that quotes the [DEPRIMED-BRIEF] tag or discusses
-# de-priming) — that false trigger is exactly what gated the leak-auditor itself.
+# Word boundaries so "deprime" does not fire inside "deprimed".
 ADVERSARIAL_PHRASE_RE = re.compile(
     r"(?<![a-z])(?:" + "|".join(re.escape(p) for p in ADVERSARIAL_PHRASES) + r")(?![a-z])"
 )
 
-TAG = "[DEPRIMED-BRIEF]"
+# The de-priming handshake marker. The orchestrator puts the SAME nonce on the audit and
+# the critic dispatch; the receipt is keyed by it. Charset is filename-safe by construction,
+# so the nonce can index a receipt file directly with no path-traversal risk.
+RECEIPT_SENTINEL_RE = re.compile(r"\[CLAIRE-RECEIPT:([A-Za-z0-9_-]+)\]")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOG = os.path.join(HERE, "gate-fire.log")
 RECEIPT_DIR = os.path.join(HERE, ".receipts")
 TTL_SECONDS = 2 * 60 * 60
-# MATCHING (0.6.2): the receipt and the gate compare the CANONICAL brief — the text after
-# the first [DEPRIMED-BRIEF] tag, coda-stripped + normalised (see brief_region) — by EXACT
-# EQUALITY. No coverage ratio, no trailing slack. Why exact, not fuzzy:
-#   - The old fuzzy bridge (>=60% coverage OR prefix + <=240-char trailing slack) leaked
-#     BOTH ways. It FALSE-ALARMED when the auditor prompt carried a wrapper the critic
-#     region lacked (the receipt text was not contained) — the spurious NORECEIPT that
-#     trained callers to wave the gate off as "an accounting artifact". And it FALSE-PASSED
-#     a short steer (<=240 chars) appended to the critic brief AFTER a clean audit — the
-#     steer reached the critic UNCHECKED (observed live 2026-06-20: a clean audit on
-#     situation+question, then a steering "ask" appended before dispatch).
-#   - Exact equality on the canonical region closes both: a wrapper BEFORE the tag is
-#     excluded on both sides (no false alarm); ANYTHING appended after the audited brief,
-#     or any edit between audit and dispatch, changes the region (no false pass). NORECEIPT
-#     now means a genuine mismatch — which is what makes strict mode safe to turn on.
-# SPINE NOTE (0.5.3, still in force): a brief that inlines a big artifact must be audited AS
-# ASSEMBLED (artifact included). Exact equality enforces that for free (the artifact is part
-# of the canonical region on BOTH sides) and does NOT reintroduce the old size-based
-# false-block, because there is no ratio — a 50KB brief matches a 50KB receipt iff identical.
-# The fix for any residual mismatch lives in the SKILL: audit the byte-identical tagged brief
-# you send the critic. NEVER relax this match to paper over a caller that audited one thing and
-# dispatched another — that is the exact bypass the slack hole was.
-# Legitimate trailing boilerplate (the attack-license) goes BEFORE the tag (skill Step 3), so
-# the after-tag extraction already excludes it; arbitrary text AFTER the brief is no longer
-# tolerated, because "tolerate any short trailing text" WAS the slack hole that let a steer in.
+
 STRICT = os.environ.get("CLAIRE_GATE_STRICT", "").strip() not in ("", "0", "false", "False")
-# CLAIRE_DEBUG=1 surfaces an under-the-hood trace of every Claire dispatch — the gate's
-# decision, whether a receipt matched, the brief-region size — so a builder can watch the
-# de-priming work (see the brief next to the verdict). OFF by default; pure visibility, it
-# NEVER changes the decision the gate takes. Parsed exactly like CLAIRE_GATE_STRICT above.
 DEBUG = os.environ.get("CLAIRE_DEBUG", "").strip() not in ("", "0", "false", "False")
 
-# Event log (0.6.0) — OBSERVABILITY only; never affects the decision below. Import-guarded
-# so an install missing the shared logger (or the copy-one-file unit harness) can't crash
-# the gate on a failed import — claire_log stays None and logging silently no-ops.
+# Event log (0.6.0) — OBSERVABILITY only; never affects the decision. Import-guarded so a
+# copy-one-file unit harness or an install missing the logger can't crash the gate.
 try:
     import claire_log
 except Exception:
     claire_log = None
 
-# Frozen attack-license — the one line allowed before the tag without being a steer.
-# Import-guarded with an inline fallback (mirrors claire_log) so a copy-one-file unit
-# harness, or an install missing claire_brief.py, never crashes the gate. Used ONLY for
-# the deterministic "known-clean pre-tag" message assist below — never for enforcement.
-try:
-    from claire_brief import CANONICAL_ATTACK_LICENSE, CANONICAL_CODA
-except Exception:
-    CANONICAL_ATTACK_LICENSE = (
-        "Your job is to find the strongest real objection, not to be agreeable; "
-        "agreement is allowed only on your own independent reasoning.")
-    CANONICAL_CODA = (
-        "[standing invitation] if you disagree with this approach or see a problem with it, "
-        "say so and explain why - before or during execution")
-
 
 def _plugin_version():
-    """Best-effort version of THIS cached build (hooks/../.claude-plugin/plugin.json), so the
-    stats reader can dedup the N-version double-write the desktop hook-glob produces. -> None
-    on any error (fail-open)."""
     try:
         with open(os.path.join(HERE, "..", ".claude-plugin", "plugin.json")) as fh:
             return json.load(fh).get("version")
@@ -133,119 +89,37 @@ def log(line):
         pass
 
 
-def normalise(text):
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
+def extract_nonce(prompt):
+    """The de-priming nonce carried in the prompt, or None. First match wins."""
+    m = RECEIPT_SENTINEL_RE.search(prompt or "")
+    return m.group(1) if m else None
 
 
-# See record-audit-receipt.py: the harness appends a standing-invitation coda to the
-# subagent prompt AFTER this PreToolUse gate reads it but BEFORE the PostToolUse
-# receipt writer does, so the receipt fingerprints brief+coda while this gate sees
-# brief-only. Both hooks cut at the coda marker so each fingerprints the brief ALONE,
-# whichever stage the harness happens to inject at. No-op when no coda is present.
-def strip_coda(norm_text):
-    """Remove ONLY the genuine harness coda (the exact CANONICAL_CODA text), wherever it sits —
-    NOT 'everything after the [standing invitation] marker'. A steer placed after the marker
-    ("[standing invitation] PS the obvious answer is X") is not the genuine coda, so it stays in
-    the fingerprint and forces a (correct) mismatch instead of riding through silently. (0.7.1
-    fix for the coda-tail blind spot: the old first-marker-anywhere truncation excised arbitrary
-    post-marker text, enabling an audit-clean / dispatch-steered bypass.) Operates on already-
-    normalised text; CANONICAL_CODA is normalised the same way for the match."""
-    coda = re.sub(r"\s+", " ", CANONICAL_CODA.lower()).strip()
-    return re.sub(r"\s+", " ", norm_text.replace(coda, " ")).strip()
-
-
-def brief_region(prompt):
-    """The CANONICAL brief = the WHOLE critic prompt with EVERY [DEPRIMED-BRIEF]
-    delimiter excised, coda-stripped + normalised. MUST stay byte-identical to
-    record-audit-receipt.py's brief_region() — both compare on this exact unit.
-
-    0.7.1 widened this from the AFTER-tag region to the WHOLE prompt. Before, only the
-    brief after the tag was matched, so any preamble the orchestrator placed BEFORE the tag
-    (a persona line, an attack-license — or a smuggled steer) reached the critic UNAUDITED
-    and unmatched (issue 2026-06-20_1046). Now the preamble is inside the matched unit, so a
-    steer before the tag changes the region and will not match a body-only receipt.
-
-    EVERY tag occurrence is excised, not just the first. The tag is a pure delimiter with no
-    steer value; excision replaces it with a space and never deletes surrounding text, so any
-    real steer always survives and still forces a mismatch — removing all copies opens no hole.
-    First-only was WRONG once the auditor is dispatched WITHOUT the tag (skill Step 3.1): if a
-    pasted artifact itself QUOTES [DEPRIMED-BRIEF], that quoted tag is the auditor prompt's
-    first-and-only tag and is excised, while the critic prompt excises its REAL delimiter and
-    the quoted tag SURVIVES — the two regions diverge and a legitimately-audited brief draws a
-    false NORECEIPT (0.7.1 Finding 1, the same 'trains callers to wave the gate off' failure
-    0.6.2 killed). Excising all occurrences converges them with no new bypass."""
-    norm = strip_coda(normalise(prompt))
-    norm = norm.replace(normalise(TAG), " ")  # excise EVERY tag (pure delimiter, no steer value)
-    return re.sub(r"\s+", " ", norm).strip()
-
-
-def pretag_region(prompt):
-    """The normalised text BEFORE the first [DEPRIMED-BRIEF] tag — the preamble that reaches
-    the critic but is not the brief body. Empty when the tag is first or absent."""
-    idx = prompt.find(TAG)
-    if idx == -1:
-        return ""
-    return re.sub(r"\s+", " ", strip_coda(normalise(prompt[:idx]))).strip()
-
-
-def pretag_is_known_clean(pre):
-    """Deterministic assist (0.7.1): the pre-tag region is 'known-clean' iff it is EMPTY
-    (blank-slate dispatch) or EXACTLY the frozen attack-license (other primitives). This is
-    NOT the enforcement — the whole-prompt receipt match certifies de-priming. It only
-    decides the NORECEIPT message wording: free-form pre-tag text (anything else) earns an
-    explicit 'you have unaudited text before the tag' nudge, since that is where a steer hides.
-    A bare known-clean preamble never needs the auditor's semantic judgement."""
-    return pre == "" or pre == re.sub(r"\s+", " ", normalise(CANONICAL_ATTACK_LICENSE)).strip()
-
-
-def has_matching_receipt(region_norm):
-    """True if a fresh receipt's canonical brief is EXACTLY the dispatched brief region.
-
-    Exact equality (not fuzzy containment) on the canonical region — the unit both this
-    gate and record-audit-receipt.py compute via brief_region(). A faithfully-audited
-    brief produces an identical region on both sides and matches; any wrapper before the
-    tag is excluded on both sides (no false alarm); anything appended/edited after the
-    audited brief changes the region and does not match (no false pass). Reads the
-    receipts written by record-audit-receipt.py."""
-    if not region_norm:
-        return False
-    now = time.time()
+def fresh_receipt(nonce):
+    """The receipt dict for `nonce` if a fresh one exists, else None. Reads the single
+    nonce-keyed file written by record-audit-receipt.py on a clean leak-audit."""
+    if not nonce:
+        return None
     try:
-        paths = glob.glob(os.path.join(RECEIPT_DIR, "*.json"))
+        with open(os.path.join(RECEIPT_DIR, nonce + ".json")) as fh:
+            rec = json.load(fh)
     except Exception:
-        return False
-    for path in paths:
-        try:
-            with open(path) as fh:
-                rec = json.load(fh)
-        except Exception:
-            continue
-        if now - rec.get("ts", 0) > TTL_SECONDS:
-            continue
-        if rec.get("text", "") == region_norm:
-            return True
-    return False
+        return None
+    if time.time() - rec.get("ts", 0) > TTL_SECONDS:
+        return None
+    brief = rec.get("brief")
+    if not isinstance(brief, str) or not brief.strip():
+        return None
+    return rec
 
 
-def fresh_receipt_texts():
-    """The canonical brief of every still-fresh receipt — for the CLAIRE_DEBUG mismatch
-    dump only, so a builder can see the dispatched region next to what was actually
-    audited and spot WHY they differ (a wrapper, an appended ask, an unstripped harness
-    coda). Never affects the decision."""
-    now = time.time()
-    out = []
-    try:
-        for path in glob.glob(os.path.join(RECEIPT_DIR, "*.json")):
-            try:
-                with open(path) as fh:
-                    rec = json.load(fh)
-            except Exception:
-                continue
-            if now - rec.get("ts", 0) <= TTL_SECONDS:
-                out.append(rec.get("text", ""))
-    except Exception:
-        pass
-    return out
+def emit_allow(new_input):
+    out = {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "allow",
+        "updatedInput": new_input,
+    }}
+    print(json.dumps(out))
 
 
 def emit_block(reason):
@@ -262,69 +136,32 @@ def emit_context(msg):
     print(json.dumps(out))
 
 
-def debug_trace(agent, decision, matched, region_len):
-    """One-line under-the-hood trace, emitted only when CLAIRE_DEBUG is on. Visibility
-    only — it reports the decision the gate already took; it never alters it."""
-    return ("[CLAIRE TRACE] gate: agent=%s · decision=%s · receipt=%s · "
-            "brief-region-len=%d · strict=%s"
-            % (agent or "?", decision, "matched" if matched else "none",
-               region_len, "on" if STRICT else "off"))
-
-
-def mismatch_dump(region_norm):
-    """CLAIRE_DEBUG only: show the dispatched canonical brief next to every fresh audited
-    brief, so a NORECEIPT can be DIAGNOSED (a wrapper? an ask appended after the audit? an
-    unstripped harness coda?) rather than waved off as 'an accounting artifact' — the very
-    dismissal that hid a real steer (2026-06-20). Visibility only; never affects the call."""
-    def t(s, n=300):
-        s = s or ""
-        return s if len(s) <= n else s[:n] + "…(+%d)" % (len(s) - n)
-    recs = fresh_receipt_texts()
-    lines = ["[CLAIRE TRACE] NORECEIPT diff — dispatched brief vs audited briefs:",
-             "  dispatched: %r" % t(region_norm)]
-    lines += ["  receipt[%d]: %r" % (i, t(r)) for i, r in enumerate(recs)] or \
-             ["  receipts: (none fresh)"]
-    return "\n".join(lines)
-
-
 NORECEIPT_MSG = (
-    "[CLAIRE GATE] This adversarial dispatch carries the " + TAG + " tag but NO leak-audit "
-    "receipt exists for this brief — meaning brief-leak-auditor did not actually run on this "
-    "exact text (or the text changed after it ran). The tag is self-attestation; it is the "
-    "receipt, not the tag, that certifies de-priming. Run brief-leak-auditor on the brief now "
-    "(it reads only the brief and judges whether it leaks your lean); fix any lean it names "
-    "using ITS neutral rewrite; re-audit until clean; then re-dispatch. "
-    "MOST COMMON cause when your brief really is neutral: you assembled it from parts — a "
-    "framing PLUS a pasted document/artifact — and audited the framing alone, then inlined the "
-    "document afterwards. Audit the FINAL assembled brief, byte-for-byte what you are sending "
-    "here, artifact included; the document reaches the critic, so a lean hidden inside it is "
-    "exactly what the check must see, and a brief whose pasted bulk was never audited is "
-    "correctly flagged. Do NOT reply 'my brief "
+    "[CLAIRE GATE] This adversarial dispatch carries a de-priming receipt id "
+    "([CLAIRE-RECEIPT:...]) but NO fresh leak-audit receipt exists for it — meaning "
+    "brief-leak-auditor did not return a clean verdict on a brief carrying this exact id "
+    "(or the receipt expired). The id is self-attestation; it is the receipt that certifies "
+    "de-priming. Run brief-leak-auditor on the brief — tagged with this id on its own line — "
+    "fix any lean it names using its neutral rewrite, re-audit until clean, then re-dispatch "
+    "with the same id. On a clean audit the gate INJECTS that exact audited brief into the "
+    "critic, so the critic reasons only from text the checker cleared. Do NOT reply 'my brief "
     "is already neutral, moving on' — a producer cannot reliably judge their own brief's "
     "neutrality, which is the exact bypass this gate exists to stop."
 )
 
-PRETAG_FREEFORM_NOTE = (
-    "\n\nFREE-FORM TEXT PRECEDES THE TAG. There is content before " + TAG + " that is not the "
-    "standard attack-license — it reaches the critic, so it counts toward de-priming ONLY if you "
-    "audited the WHOLE prompt (preamble included). Audit the byte-identical full prompt you are "
-    "dispatching, or move that text after the tag into the brief where it is audited. A lean "
-    "smuggled into the preamble is exactly what the whole-prompt audit catches."
-)
-
 REMIND_MSG = (
-    "[CLAIRE GATE] This looks like an adversarial / outside-perspective dispatch, but the "
-    + TAG + " tag is absent — the de-priming step may have been skipped.\n"
+    "[CLAIRE GATE] This looks like an adversarial / outside-perspective dispatch, but it "
+    "carries no [CLAIRE-RECEIPT:<id>] marker — the de-priming step may have been skipped.\n"
     "Before dispatching, apply the de-priming checklist (/claire:challenge Step 2):\n"
     "  - strip your own rationale and the answer you expect\n"
     "  - state every live option fairly (neutral framing, not just omitting your conclusion)\n"
     "  - de-jargon to plain language an outsider reads cold\n"
     "  - situation first, so the adversary forms its own read before any claim\n"
-    "  - if this tests whether a specific behaviour fires, run probe-auditor on the brief first\n"
-    "Then run brief-leak-auditor on the brief, fix any lean it names with its neutral rewrite, "
-    "show the user the NEUTRAL BRIEF block, and re-dispatch with " + TAG + " present. The gate "
-    "passes silently only once a leak-audit receipt exists for the brief — the tag alone does "
-    "not satisfy it. Do NOT self-certify 'my brief is already neutral' — that is the bypass "
+    "  - if this tests whether a specific behaviour fires, run claire:probe-auditor first\n"
+    "Then run brief-leak-auditor on the brief tagged with a fresh [CLAIRE-RECEIPT:<id>], fix "
+    "any lean it names with its neutral rewrite, show the user the NEUTRAL BRIEF, and "
+    "re-dispatch with that id. The gate injects the audited brief only once a fresh receipt "
+    "covers the id. Do NOT self-certify 'my brief is already neutral' — that is the bypass "
     "this gate exists to stop."
 )
 
@@ -338,97 +175,76 @@ def main():
              or data.get("subagent_type") or "")
     prompt = ti.get("prompt") or ti.get("description") or ""
     pl = prompt.lower()
-
     atype_bare = str(atype).strip().split(":")[-1]
+    atype_raw = str(atype).strip()
 
-    # NEVER gate the de-priming CHECKER itself. brief-leak-auditor reads a brief to
-    # judge its neutrality — gating it would circularly demand a receipt on the very
-    # tool that earns receipts, and its brief routinely quotes the tag and the word
-    # "de-priming", which would otherwise trip the phrase backstop. This name check
-    # is authoritative over the phrase net below.
+    # NEVER gate the de-priming CHECKER itself — authoritative over the phrase net below.
     if atype_bare == "brief-leak-auditor":
         return
 
-    # Only gate Claire's OWN adversarial agents — match on the NAMESPACED form
-    # (claire:<name>), so a different tool's, or the workspace's own, same-named
-    # local agent (e.g. a project's own failure-mode-attacker) is not swept in.
-    # Plugin dispatches carry the namespaced agent-type; a bare same-named agent is
-    # someone else's. The phrase net stays as the backstop for a missing agent-type.
-    # (If a harness ever fails to namespace Claire's own agents, the gate would not
-    # fire — /claire:doctor's live self-test is the per-machine detector for that.)
-    atype_raw = str(atype).strip()
+    nonce = extract_nonce(prompt)
+    # Only Claire's OWN adversarial agents (namespaced) count by type; a bare same-named
+    # workspace agent is someone else's and is left alone.
     is_claire_adv = atype_bare in ADVERSARIAL_AGENTS and atype_raw.startswith("claire:")
-    is_adv = is_claire_adv or bool(ADVERSARIAL_PHRASE_RE.search(pl))
-    if not is_adv:
-        return  # not Claire's adversarial dispatch — silent pass
+    is_phrase = bool(ADVERSARIAL_PHRASE_RE.search(pl))
+    is_depriming = is_claire_adv or (nonce is not None) or is_phrase
+    if not is_depriming:
+        return  # not a Claire de-priming dispatch — silent pass
 
-    # Compute the receipt match ONCE: it drives both the decision below and the debug
-    # trace, so the trace can never disagree with the call the gate actually makes.
-    region = brief_region(prompt)
-    matched = has_matching_receipt(region)
     agent = atype or "?"
-
-    def with_trace(msg, decision):
-        """Append the debug trace to a message when CLAIRE_DEBUG is on; otherwise return
-        the message untouched. The decision is already made — this only adds visibility."""
-        if not DEBUG:
-            return msg
-        trace = debug_trace(agent, decision, matched, len(region))
-        return (msg + "\n\n" + trace) if msg else trace
-
-    # Content-free correlation id: the harness dispatch tool-call id, identical across every
-    # concurrently-firing cached version, never brief-derived — lets the reader dedup the
-    # N-version double-write and join this 'pre' event to its 'post' audit. Absent -> omitted.
     dispatch_id = data.get("tool_use_id")
 
-    def record_pre(decision):
-        """Log one 'pre' event for this gate decision. OBSERVABILITY only — fail-open, and
-        never affects the decision already taken above."""
+    def record_pre(decision, brief_len=0):
         if not claire_log:
             return
         try:
             claire_log.record(event="pre", gate_decision=decision, agent=agent,
                               dispatch_id=dispatch_id, plugin_version=PLUGIN_VERSION,
-                              brief_len=len(region))
+                              brief_len=brief_len)
         except Exception:
             pass
 
-    # The receipt — not the tag — is what certifies de-priming.
-    if matched:
-        log("PASS agent=%s" % agent)
-        record_pre("PASS")
-        if DEBUG:
-            emit_context(with_trace("", "PASS"))  # silent in normal use; trace only in debug
-        return  # audited-and-clean brief — pass through
+    def trace(msg, decision, n_brief=0):
+        if not DEBUG:
+            return msg
+        t = ("[CLAIRE TRACE] gate: agent=%s · decision=%s · nonce=%s · brief-len=%d · strict=%s"
+             % (agent, decision, nonce or "none", n_brief, "on" if STRICT else "off"))
+        return (msg + "\n\n" + t) if msg else t
 
-    tag_present = TAG in prompt
-    if tag_present:
-        log("NORECEIPT agent=%s (tag, no receipt)" % agent)
-        nr_msg = NORECEIPT_MSG
-        # Free-form text before the tag reaches the critic but is audited only if the WHOLE
-        # prompt was audited — name that explicitly (deterministic assist, not the decision).
-        if not pretag_is_known_clean(pretag_region(prompt)):
-            nr_msg += PRETAG_FREEFORM_NOTE
-        # Under debug, append the dispatched-vs-audited diff so a NORECEIPT is diagnosable.
-        if DEBUG:
-            nr_msg += "\n\n" + mismatch_dump(region)
+    # Injection path: a nonce that resolves to a fresh, clean receipt.
+    if nonce is not None:
+        rec = fresh_receipt(nonce)
+        if rec is not None:
+            brief = rec["brief"]
+            log("PASS agent=%s nonce=%s" % (agent, nonce))
+            record_pre("PASS", len(brief))
+            new_input = dict(ti)
+            new_input["prompt"] = brief
+            # The matcher reads the nonce from prompt OR description; the critic only ever reads
+            # prompt, but clear description too so no orchestrator-supplied text survives the overwrite.
+            new_input.pop("description", None)
+            emit_allow(new_input)  # inject the audited brief; no extra context (keep the rewrite clean)
+            return
+        # nonce present but no fresh receipt -> fail closed
+        log("NORECEIPT agent=%s nonce=%s (no fresh receipt)" % (agent, nonce))
         if STRICT:
             log("BLOCK agent=%s (strict, no receipt)" % agent)
             record_pre("BLOCK")
-            emit_block(with_trace(nr_msg, "NORECEIPT/BLOCK"))
+            emit_block(trace(NORECEIPT_MSG, "NORECEIPT/BLOCK"))
         else:
             record_pre("NORECEIPT")
-            emit_context(with_trace(nr_msg, "NORECEIPT"))
+            emit_context(trace(NORECEIPT_MSG, "NORECEIPT"))
         return
 
-    log("REMIND agent=%s (no %s)" % (agent, TAG))
+    # De-priming dispatch with no nonce at all (claire-typed or phrase-net) -> REMIND.
+    log("REMIND agent=%s (no receipt id)" % agent)
     if STRICT:
-        log("BLOCK agent=%s (strict, no tag)" % agent)
+        log("BLOCK agent=%s (strict, no id)" % agent)
         record_pre("BLOCK")
-        emit_block(with_trace(REMIND_MSG, "REMIND/BLOCK"))
+        emit_block(trace(REMIND_MSG, "REMIND/BLOCK"))
     else:
         record_pre("REMIND")
-        emit_context(with_trace(REMIND_MSG, "REMIND"))
+        emit_context(trace(REMIND_MSG, "REMIND"))
 
 
 if __name__ == "__main__":
