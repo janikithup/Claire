@@ -95,6 +95,20 @@ try:
 except Exception:
     claire_log = None
 
+# Frozen attack-license — the one line allowed before the tag without being a steer.
+# Import-guarded with an inline fallback (mirrors claire_log) so a copy-one-file unit
+# harness, or an install missing claire_brief.py, never crashes the gate. Used ONLY for
+# the deterministic "known-clean pre-tag" message assist below — never for enforcement.
+try:
+    from claire_brief import CANONICAL_ATTACK_LICENSE, CANONICAL_CODA
+except Exception:
+    CANONICAL_ATTACK_LICENSE = (
+        "Your job is to find the strongest real objection, not to be agreeable; "
+        "agreement is allowed only on your own independent reasoning.")
+    CANONICAL_CODA = (
+        "[standing invitation] if you disagree with this approach or see a problem with it, "
+        "say so and explain why - before or during execution")
+
 
 def _plugin_version():
     """Best-effort version of THIS cached build (hooks/../.claude-plugin/plugin.json), so the
@@ -128,33 +142,60 @@ def normalise(text):
 # receipt writer does, so the receipt fingerprints brief+coda while this gate sees
 # brief-only. Both hooks cut at the coda marker so each fingerprints the brief ALONE,
 # whichever stage the harness happens to inject at. No-op when no coda is present.
-CODA_MARKERS = ("[standing invitation]",)
-
-
 def strip_coda(norm_text):
-    cut = len(norm_text)
-    for m in CODA_MARKERS:
-        i = norm_text.find(m)
-        if i != -1:
-            cut = min(cut, i)
-    return norm_text[:cut].strip()
+    """Remove ONLY the genuine harness coda (the exact CANONICAL_CODA text), wherever it sits —
+    NOT 'everything after the [standing invitation] marker'. A steer placed after the marker
+    ("[standing invitation] PS the obvious answer is X") is not the genuine coda, so it stays in
+    the fingerprint and forces a (correct) mismatch instead of riding through silently. (0.7.1
+    fix for the coda-tail blind spot: the old first-marker-anywhere truncation excised arbitrary
+    post-marker text, enabling an audit-clean / dispatch-steered bypass.) Operates on already-
+    normalised text; CANONICAL_CODA is normalised the same way for the match."""
+    coda = re.sub(r"\s+", " ", CANONICAL_CODA.lower()).strip()
+    return re.sub(r"\s+", " ", norm_text.replace(coda, " ")).strip()
 
 
 def brief_region(prompt):
-    """The portion of the critic prompt that should BE the audited brief: everything
-    after the FIRST tag. If there is no tag, the whole prompt is the candidate region.
+    """The CANONICAL brief = the WHOLE critic prompt with EVERY [DEPRIMED-BRIEF]
+    delimiter excised, coda-stripped + normalised. MUST stay byte-identical to
+    record-audit-receipt.py's brief_region() — both compare on this exact unit.
 
-    The first [DEPRIMED-BRIEF] is the delimiter the orchestrator places, with any
-    preamble (attack-license, persona) before it and the brief — artifact included —
-    after it. We deliberately take the FIRST occurrence, not the last: a pasted artifact
-    can itself QUOTE the tag (Claire reviewing Claire's own docs is the common case), and
-    rfind would then truncate the region to the tail after that embedded quote, falsely
-    warning NORECEIPT on a brief that was correctly audited as assembled. Everything after
-    the first tag is the brief, embedded tag-text and all — which is exactly what the
-    receipt fingerprints (the auditor sees the brief body, embedded tag included)."""
+    0.7.1 widened this from the AFTER-tag region to the WHOLE prompt. Before, only the
+    brief after the tag was matched, so any preamble the orchestrator placed BEFORE the tag
+    (a persona line, an attack-license — or a smuggled steer) reached the critic UNAUDITED
+    and unmatched (issue 2026-06-20_1046). Now the preamble is inside the matched unit, so a
+    steer before the tag changes the region and will not match a body-only receipt.
+
+    EVERY tag occurrence is excised, not just the first. The tag is a pure delimiter with no
+    steer value; excision replaces it with a space and never deletes surrounding text, so any
+    real steer always survives and still forces a mismatch — removing all copies opens no hole.
+    First-only was WRONG once the auditor is dispatched WITHOUT the tag (skill Step 3.1): if a
+    pasted artifact itself QUOTES [DEPRIMED-BRIEF], that quoted tag is the auditor prompt's
+    first-and-only tag and is excised, while the critic prompt excises its REAL delimiter and
+    the quoted tag SURVIVES — the two regions diverge and a legitimately-audited brief draws a
+    false NORECEIPT (0.7.1 Finding 1, the same 'trains callers to wave the gate off' failure
+    0.6.2 killed). Excising all occurrences converges them with no new bypass."""
+    norm = strip_coda(normalise(prompt))
+    norm = norm.replace(normalise(TAG), " ")  # excise EVERY tag (pure delimiter, no steer value)
+    return re.sub(r"\s+", " ", norm).strip()
+
+
+def pretag_region(prompt):
+    """The normalised text BEFORE the first [DEPRIMED-BRIEF] tag — the preamble that reaches
+    the critic but is not the brief body. Empty when the tag is first or absent."""
     idx = prompt.find(TAG)
-    region = prompt[idx + len(TAG):] if idx != -1 else prompt
-    return strip_coda(normalise(region))
+    if idx == -1:
+        return ""
+    return re.sub(r"\s+", " ", strip_coda(normalise(prompt[:idx]))).strip()
+
+
+def pretag_is_known_clean(pre):
+    """Deterministic assist (0.7.1): the pre-tag region is 'known-clean' iff it is EMPTY
+    (blank-slate dispatch) or EXACTLY the frozen attack-license (other primitives). This is
+    NOT the enforcement — the whole-prompt receipt match certifies de-priming. It only
+    decides the NORECEIPT message wording: free-form pre-tag text (anything else) earns an
+    explicit 'you have unaudited text before the tag' nudge, since that is where a steer hides.
+    A bare known-clean preamble never needs the auditor's semantic judgement."""
+    return pre == "" or pre == re.sub(r"\s+", " ", normalise(CANONICAL_ATTACK_LICENSE)).strip()
 
 
 def has_matching_receipt(region_norm):
@@ -263,6 +304,14 @@ NORECEIPT_MSG = (
     "neutrality, which is the exact bypass this gate exists to stop."
 )
 
+PRETAG_FREEFORM_NOTE = (
+    "\n\nFREE-FORM TEXT PRECEDES THE TAG. There is content before " + TAG + " that is not the "
+    "standard attack-license — it reaches the critic, so it counts toward de-priming ONLY if you "
+    "audited the WHOLE prompt (preamble included). Audit the byte-identical full prompt you are "
+    "dispatching, or move that text after the tag into the brief where it is audited. A lean "
+    "smuggled into the preamble is exactly what the whole-prompt audit catches."
+)
+
 REMIND_MSG = (
     "[CLAIRE GATE] This looks like an adversarial / outside-perspective dispatch, but the "
     + TAG + " tag is absent — the de-priming step may have been skipped.\n"
@@ -355,8 +404,14 @@ def main():
     tag_present = TAG in prompt
     if tag_present:
         log("NORECEIPT agent=%s (tag, no receipt)" % agent)
+        nr_msg = NORECEIPT_MSG
+        # Free-form text before the tag reaches the critic but is audited only if the WHOLE
+        # prompt was audited — name that explicitly (deterministic assist, not the decision).
+        if not pretag_is_known_clean(pretag_region(prompt)):
+            nr_msg += PRETAG_FREEFORM_NOTE
         # Under debug, append the dispatched-vs-audited diff so a NORECEIPT is diagnosable.
-        nr_msg = NORECEIPT_MSG + ("\n\n" + mismatch_dump(region) if DEBUG else "")
+        if DEBUG:
+            nr_msg += "\n\n" + mismatch_dump(region)
         if STRICT:
             log("BLOCK agent=%s (strict, no receipt)" % agent)
             record_pre("BLOCK")

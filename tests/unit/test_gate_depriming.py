@@ -35,6 +35,17 @@ def _normalise(text):
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
 
+def _canonical(text):
+    """Mirror the hooks' brief_region (0.7.1): whole text, EVERY [DEPRIMED-BRIEF] delimiter
+    excised, normalised + collapsed. A seeded receipt models what record-audit-receipt.py
+    actually stores — the WHOLE audited prompt (preamble included), not just the after-tag
+    body. ALL tag occurrences are excised, not just the first (0.7.1 Finding 1 fix): the tag
+    is a pure delimiter, so an artifact that quotes it must be excised identically on both
+    sides. Seeding a text with no tag is unchanged (nothing to excise)."""
+    norm = _normalise(text).replace(_normalise(TAG), " ")
+    return re.sub(r"\s+", " ", norm).strip()
+
+
 def run_gate(payload, receipts=None, env=None):
     """Drive the gate with one stdin payload in an isolated dir.
 
@@ -53,7 +64,7 @@ def run_gate(payload, receipts=None, env=None):
             os.makedirs(rdir, exist_ok=True)
             now = time.time()
             for i, (text, age) in enumerate(receipts):
-                norm = _normalise(text)
+                norm = _canonical(text)
                 with open(os.path.join(rdir, "r%d.json" % i), "w") as fh:
                     json.dump({"ts": now - age, "text": norm, "len": len(norm)}, fh)
         run_env = dict(os.environ)
@@ -143,9 +154,12 @@ def test_receipt_passes_after_a_persona_preamble():
     on the wrapping. Receipt covering the post-tag brief must still pass."""
     brief = "\nSituation: two teams disagree on a deadline. Outside read?"
     prompt = "You are Claire, a blank-slate advisor.\n\n" + TAG + brief
+    # 0.7.1: the persona preamble is part of the audited WHOLE prompt, so the receipt must
+    # cover preamble+brief (seed the whole prompt). A body-only receipt now (correctly)
+    # NORECEIPTs — the preamble would not have been audited.
     out, log = run_gate(_dispatch("claire:blank-slate-advisor", prompt),
-                        receipts=[(brief, 5)])
-    assert out.strip() == "", "tag-after-preamble with a receipt must pass silently"
+                        receipts=[(prompt, 5)])
+    assert out.strip() == "", "whole-prompt (persona preamble + brief) with a matching receipt must pass silently"
     assert "PASS" in log
 
 
@@ -160,10 +174,11 @@ def test_attack_license_before_tag_passes():
     brief = "Situation: a team must pick between two suppliers for a one-year contract. Outside read on the choice?"
     attack_license = ("Your job is to find the strongest real objection, not to be agreeable; "
                       "agreement is allowed only on your own independent reasoning.\n\n")
+    # 0.7.1: the attack-license is audited as part of the whole prompt; seed the whole prompt.
     out, log = run_gate(
         _dispatch("claire:failure-mode-attacker", attack_license + TAG + "\n" + brief),
-        receipts=[("\n" + brief, 10)])
-    assert out.strip() == "", "attack-license before the tag must pass silently, got: %r" % out
+        receipts=[(attack_license + TAG + "\n" + brief, 10)])
+    assert out.strip() == "", "attack-license (audited in the whole prompt) must pass silently, got: %r" % out
     assert "PASS" in log
 
 
@@ -285,11 +300,65 @@ def test_artifact_quoting_the_tag_still_matches_when_audited_assembled():
              "The gate keys on the [DEPRIMED-BRIEF] tag and writes a receipt when the auditor "
              "passes. List what could go wrong with that design.")
     # the orchestrator places ONE real delimiter; the artifact text after it quotes the tag
+    # 0.7.1: seed the whole prompt (preamble + tag + brief). Only the FIRST tag (the
+    # orchestrator's delimiter) is excised on both sides; the tag the artifact merely quotes
+    # stays in the unit identically, so the assembled brief still matches.
     out, log = run_gate(
         _dispatch("claire:failure-mode-attacker", "Attack-license.\n" + TAG + brief),
-        receipts=[(brief, 10)])
+        receipts=[("Attack-license.\n" + TAG + brief, 10)])
     assert out.strip() == "", "assembled brief whose artifact quotes the tag must still pass, got: %r" % out[:200]
     assert "PASS" in log
+
+
+# --- 0.7.1: the pre-tag preamble is now inside the audited unit ------------------
+
+@case
+def test_steer_in_pretag_preamble_not_audited_warns():
+    """BUG GUARDED (0.7.1 — the core spine pin for issue 2026-06-20_1046): a steer placed
+    BEFORE the tag reaches the critic. If only the after-tag body was audited (a body-only
+    receipt), the gate must NOT pass — the preamble was never checked. RED-ON-REINTRODUCTION:
+    if brief_region ever reverts to after-tag slicing, the body-only receipt would match the
+    after-tag region and this would wrongly PASS."""
+    body = "\nSituation: a team must choose a vendor for the year. Outside read?"
+    prompt = "You are a sharp outsider. The obvious read is to switch vendors.\n" + TAG + body
+    out, log = run_gate(_dispatch("claire:blank-slate-advisor", prompt),
+                        receipts=[(body, 10)])  # ONLY the body was audited, not the steering preamble
+    assert "PASS" not in log, "a steer in the unaudited pre-tag preamble must not pass"
+    assert "NORECEIPT" in log
+
+
+@case
+def test_whole_prompt_including_preamble_audited_passes():
+    """0.7.1 companion: when the WHOLE prompt (preamble included) WAS audited and cleared
+    (receipt covers preamble+body), it passes. The guarantee is 'the whole prompt was audited',
+    not 'no preamble allowed' — a real steer would be caught by the auditor, not by the match."""
+    body = "\nSituation: a team must choose a vendor for the year. Outside read?"
+    prompt = "Framing the auditor saw and cleared.\n" + TAG + body
+    out, log = run_gate(_dispatch("claire:blank-slate-advisor", prompt), receipts=[(prompt, 10)])
+    assert out.strip() == "" and "PASS" in log, "a whole-prompt-audited brief must pass, got: %r" % out[:160]
+
+
+@case
+def test_blank_slate_empty_pretag_passes():
+    """0.7.1 shape-1: blank-slate has no preamble (empty pre-tag region). Whole-prompt = tag+body;
+    a receipt over the body passes silently."""
+    body = "\nSituation: two teams disagree on a deadline. Outside read?"
+    out, log = run_gate(_dispatch("claire:blank-slate-advisor", TAG + body), receipts=[(body, 10)])
+    assert out.strip() == "" and "PASS" in log
+
+
+@case
+def test_freeform_pretag_noreceipt_message_names_it():
+    """0.7.1: when a NORECEIPT fires and the pre-tag region is free-form (not empty, not the
+    canonical attack-license), the message must explicitly name the unaudited preamble, so the
+    cause is diagnosable instead of dismissed. Empty pre-tag uses the standard message."""
+    out, _ = run_gate(_dispatch("claire:failure-mode-attacker",
+        "The obvious answer here is to rebuild it.\n" + TAG + "\nSituation: pick a vendor."))
+    ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert "FREE-FORM TEXT PRECEDES THE TAG" in ctx, "free-form preamble NORECEIPT must name the unaudited preamble"
+    out2, _ = run_gate(_dispatch("claire:failure-mode-attacker", TAG + "\nSituation: pick a vendor."))
+    ctx2 = json.loads(out2)["hookSpecificOutput"]["additionalContext"]
+    assert "FREE-FORM TEXT PRECEDES THE TAG" not in ctx2, "empty pre-tag must use the standard message"
 
 
 # --- strict mode: warnings become hard blocks ----------------------------------

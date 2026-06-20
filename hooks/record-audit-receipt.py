@@ -81,6 +81,15 @@ try:
 except Exception:
     claire_log = None
 
+# Frozen coda template — MUST match adversarial-gate.py. Import-guarded with an inline fallback
+# so a copy-one-file unit harness never crashes. strip_coda removes ONLY this exact text.
+try:
+    from claire_brief import CANONICAL_CODA
+except Exception:
+    CANONICAL_CODA = (
+        "[standing invitation] if you disagree with this approach or see a problem with it, "
+        "say so and explain why - before or during execution")
+
 _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -133,35 +142,44 @@ def normalise(text):
 # marker so BOTH hooks fingerprint the brief ALONE. No-op when no coda is present
 # (e.g. an install whose CLAUDE.md carries no subagent-latitude guidance). Observed
 # live 2026-06-17; the marker is the harness's own stable label for the injected coda.
-CODA_MARKERS = ("[standing invitation]",)
 TAG = "[DEPRIMED-BRIEF]"
 
 
 def strip_coda(norm_text):
-    cut = len(norm_text)
-    for m in CODA_MARKERS:
-        i = norm_text.find(m)
-        if i != -1:
-            cut = min(cut, i)
-    return norm_text[:cut].strip()
+    """MUST stay byte-identical to adversarial-gate.py's strip_coda: remove ONLY the exact
+    CANONICAL_CODA, NOT arbitrary text after the [standing invitation] marker (0.7.1 coda-tail
+    fix — the old first-marker-anywhere cut let a steer after the marker ride through). Operates
+    on already-normalised text."""
+    coda = re.sub(r"\s+", " ", CANONICAL_CODA.lower()).strip()
+    return re.sub(r"\s+", " ", norm_text.replace(coda, " ")).strip()
 
 
 def brief_region(text):
-    """The CANONICAL brief = everything after the FIRST [DEPRIMED-BRIEF] tag (or the
-    whole text when untagged), coda-stripped + normalised.
+    """The CANONICAL brief = the WHOLE prompt with EVERY [DEPRIMED-BRIEF]
+    delimiter excised, coda-stripped + normalised.
 
     This MUST stay byte-identical to adversarial-gate.py's brief_region(): the receipt
-    fingerprints this unit and the gate matches this unit, by EXACT equality. If the two
-    extractions drift, the false-NORECEIPT seam this closes reopens. Recording the
-    after-tag region (not the whole auditor prompt) is what makes a wrapper the caller
-    puts BEFORE the tag — "Here is a brief: [DEPRIMED-BRIEF] ..." — harmless: it is
-    excluded from the fingerprint, so a faithfully-audited brief still matches even when
-    the auditor prompt was wrapped. (Pre-0.6.2 this recorded the whole prompt, so any
-    such wrapper produced a spurious NORECEIPT — the false alarm that trained callers to
-    ignore the gate.)"""
-    idx = text.find(TAG)
-    region = text[idx + len(TAG):] if idx != -1 else text
-    return strip_coda(normalise(region))
+    fingerprints this unit and the gate matches it by EXACT equality. If the two extractions
+    drift, the seam reopens.
+
+    0.7.1 widened the unit from the AFTER-tag region to the WHOLE prompt (preamble included),
+    to close the pre-tag unaudited-channel (issue 2026-06-20_1046): any persona/attack-license
+    text the orchestrator puts BEFORE the tag now reaches the critic AND is inside the audited+
+    matched unit, so a steer smuggled into the preamble changes the fingerprint and is caught
+    by the auditor (if it audited the whole prompt) or by a receipt mismatch (if it did not).
+    EVERY tag occurrence is excised, not just the first (a pure delimiter with no steer value;
+    excision replaces it with a space and never deletes surrounding text, so any real steer
+    survives and still forces a mismatch). First-only was wrong once the auditor is dispatched
+    WITHOUT the tag (skill Step 3.1): if a pasted artifact QUOTES the tag, the auditor side
+    excises that quoted tag (its first-and-only one) while the critic side excises the real
+    delimiter and the quoted tag survives — the regions diverge and a faithfully-audited brief
+    draws a false NORECEIPT (0.7.1 Finding 1). Excising all copies converges them.
+    The consequence still holds: the orchestrator must audit the BYTE-IDENTICAL whole prompt it
+    dispatches — a wrapper on the auditor prompt that the critic lacks (correctly) fails to
+    match, because the audited and dispatched text genuinely differ."""
+    norm = strip_coda(normalise(text))
+    norm = norm.replace(normalise(TAG), " ")  # excise EVERY tag (pure delimiter, no steer value)
+    return re.sub(r"\s+", " ", norm).strip()
 
 
 def prune(now):

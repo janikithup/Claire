@@ -128,21 +128,21 @@ def test_receipt_stores_the_audited_brief_normalised():
 
 
 @case
-def test_tagged_auditor_brief_stores_after_tag_region():
-    """0.6.2 contract. When the auditor brief carries a [DEPRIMED-BRIEF] tag (the skill now
-    sends the byte-identical tagged brief to BOTH auditor and critic), the receipt must
-    fingerprint the text AFTER the tag — the same canonical region the gate extracts — not
-    the whole prompt. So a wrapper the caller put before the tag, and the tag line itself,
-    are excluded, and the receipt matches the critic's after-tag region exactly. GUARDS the
-    regression where the receipt fingerprints the whole wrapped prompt and never matches the
-    gate's region — the false-NORECEIPT that trained callers to ignore the gate."""
+def test_receipt_stores_whole_prompt_minus_tag_delimiter():
+    """0.7.1 contract. The receipt fingerprints the WHOLE auditor prompt with only the first
+    [DEPRIMED-BRIEF] delimiter excised — NOT just the after-tag body. So any preamble before the
+    tag (a persona line, an attack-license — or a smuggled steer) IS part of the fingerprint, so
+    it must be audited and it must match the critic's whole prompt. GUARDS the regression where
+    the receipt drops the preamble (the 0.6.2 after-tag behaviour that left the pre-tag channel
+    unaudited, issue 2026-06-20_1046)."""
+    preamble = "You are a sharp outsider. The obvious read is to switch."
     body = "A team must choose between two vendors for a year. Outside read?"
-    wrapped = "Here is a brief to audit:\n[DEPRIMED-BRIEF]\n" + body
-    rc, out, receipts = _run(_payload(AUDITOR_BARE, wrapped, CLEAN))
+    prompt = preamble + "\n[DEPRIMED-BRIEF]\n" + body
+    rc, out, receipts = _run(_payload(AUDITOR_BARE, prompt, CLEAN))
     assert len(receipts) == 1
-    assert receipts[0]["text"] == _expected_text(body), \
-        "receipt must store the after-tag region (canonical brief), excluding the wrapper and tag"
-    assert "deprimed-brief" not in receipts[0]["text"], "the tag itself must not be in the fingerprint"
+    assert receipts[0]["text"] == _expected_text(preamble + " " + body), \
+        "receipt must store the whole prompt (preamble included), only the tag delimiter excised"
+    assert "deprimed-brief" not in receipts[0]["text"], "the tag delimiter itself must not be in the fingerprint"
 
 
 @case

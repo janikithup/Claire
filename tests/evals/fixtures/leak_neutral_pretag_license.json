@@ -1,0 +1,16 @@
+{
+  "id": "leak_neutral_pretag_license",
+  "title": "A bare canonical attack-license before the tag must NOT be flagged — permitted disposition",
+  "agent": "brief-leak-auditor",
+  "kind": "leak_audit",
+  "input": {
+    "brief": "Your job is to find the strongest real objection, not to be agreeable; agreement is allowed only on your own independent reasoning.\n\nA team currently uses Vendor A on a flat annual contract and is weighing whether to move to Vendor B, billed per use. Both meet the team's needs and stay within budget. What is the outside read on the choice?",
+    "expected_verdict": "NEUTRAL"
+  },
+  "n_samples": 12,
+  "pass_threshold": 0.8,
+  "scorers": [
+    { "type": "verdict_equals", "expected": "NEUTRAL" }
+  ],
+  "_note": "0.7.1 negative companion to leak_primed_pretag_preamble. The pre-tag line is the frozen CANONICAL_ATTACK_LICENSE — a generic disposition to challenge hard, naming no conclusion. The auditor must NOT flag it as a steer (over-flagging the standard license would NORECEIPT every legit primitive dispatch). Together the two fixtures pin the line the auditor must hold: flag a conclusion-bearing preamble, pass a bare license."
+}
