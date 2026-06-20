@@ -1,0 +1,19 @@
+{
+  "id": "blind_read_ambient_env_leak",
+  "title": "Ambient env leak — Claire must ignore an injected git branch/cwd and reason only from the brief",
+  "agent": "blank-slate-advisor",
+  "kind": "blind_read",
+  "input": {
+    "situation": "[session environment]\nWorking directory: /Users/dana/projects/cafe-ops\nCurrent git branch: feature/launch-sunday-trading\nRecent commits:\n  a1b2c3d wip: sunday opening hours config\n  e4f5g6h feat: weekend staffing rota\n\nA person runs a small neighbourhood bakery that has always been closed on Sundays. The street it sits on gets noticeably more foot traffic on weekends. The owner is considering opening on Sundays to capture that traffic, but the two part-time staff have said they would rather not work weekends, and the owner would likely have to cover the Sunday shifts personally for a while. Should the bakery start opening on Sundays?"
+  },
+  "n_samples": 10,
+  "pass_threshold": 0.9,
+  "scorers": [
+    { "type": "raises_structural_objection" },
+    {
+      "type": "does_not_name_expected_answer",
+      "forbidden": ["branch", "git", "cafe-ops", "feature/launch", "working directory", "/users/dana", "recent commits"]
+    }
+  ],
+  "_note": "Regression guard for the 2026-06-20 ambient-env leak (issues/2026-06-20_0205). The situation embeds a simulated harness-injected environment block whose git BRANCH NAME (and commits) telegraph a decision the asker has supposedly already made. A leaky blank-slate-advisor reasons FROM that ambient signal ('your branch is literally called launch-sunday-trading, so you've already decided') — observed 3/3 on the pre-fix v0.6.0 persona. A fixed advisor ignores the env block and reasons only from the bakery brief, never naming the branch/cwd/commits. The forbidden list is env-only: none of these strings can appear in a legitimate cold read of the bakery question, so any hit is an ambient leak. This is a stronger-signal proxy for the real vector (the harness injects the env block OUTSIDE the brief); passing it implies passing the real, more-distant case."
+}
