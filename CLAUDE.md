@@ -181,9 +181,17 @@ never for their material:
   the second, a fix the third).
 - The **version bump is the last step** — only after the tests pass, the eval
   pass-rate holds, and the change is confirmed landed. Never bump first.
-- **Tag every release.** After the bump lands, tag the commit `vX.Y.Z` and cut a
-  GitHub Release with notes from its CHANGELOG entry. The marketplace serves `main`
-  HEAD, so the tag is a version's only rollback point and its only user-visible
-  notes. (Tagging silently lapsed after v0.4.1 — eight untagged releases — so this
-  earns its line; a `release.sh` doing bump+tag+release in one step would make it
-  machinery instead of a remembered rule.)
+- **Publish to BOTH repos — run `./release.sh`.** A release touches *two* repos,
+  and forgetting the second strands every user: this plugin repo (tag `vX.Y.Z`,
+  GitHub Release) **and** the separate `claire-marketplace` repo (the `version`
+  field in its `marketplace.json`). The Desktop panel shows users that marketplace
+  `version` field as "latest" and only offers an update when it climbs — the plugin
+  `source` is a bare repo URL that tracks `main` HEAD for *code*, but the version
+  number users *see* comes only from the marketplace manifest. Bump the plugin
+  without bumping the marketplace and everyone is silently stuck on the old version
+  (exactly what happened to 0.6.1→0.7.1 — four releases no one could install).
+  `./release.sh` does tag + push + GitHub Release + marketplace bump + push + a
+  post-publish remote check in one step; `./release.sh --check` verifies all four
+  version sources (plugin.json, marketplace.json, latest tag, CHANGELOG) agree. Run
+  the script — don't do these by hand. (The cross-repo check can't live in the unit
+  suite: the sibling marketplace repo isn't present in CI.)

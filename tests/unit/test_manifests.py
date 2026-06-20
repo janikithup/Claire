@@ -6,11 +6,16 @@ Guards the manifest a user's Claude Code actually reads when loading Claire:
 plugin.json. A typo breaks the load with a cryptic error, so we check it in CI on
 every commit.
 
-NOTE on marketplace.json: Claire installs by git-cloning into ~/.claude/skills/,
-NOT via a marketplace. A `.claude-plugin/marketplace.json` sitting beside
-plugin.json makes the skills-directory loader treat the folder as a *marketplace*
-rather than a *plugin*, so its commands never register — therefore the repo ships
-NO marketplace.json on purpose, and these tests do not look for one.
+NOTE on marketplace.json — it lives in a SEPARATE repo. Claire's primary install
+IS a marketplace (janikithup/claire-marketplace), but that marketplace.json sits in
+its own repo, never beside this plugin.json: a `.claude-plugin/marketplace.json`
+next to plugin.json makes the loader treat the folder as a *marketplace* rather
+than a *plugin* (and also breaks the clone-into-skills-dir alternative install), so
+the commands never register. This repo therefore ships NO marketplace.json on
+purpose. The cross-repo version check — plugin.json vs the marketplace repo's
+`version` field, the lag that stranded 0.6.1->0.7.1 — CANNOT live here (the sibling
+repo isn't present in CI); it is enforced by `./release.sh --check`. These tests
+cover only the within-repo manifest.
 
 Two kinds of check:
   1. VALIDITY — plugin.json is parseable JSON with the load-bearing fields.
@@ -66,8 +71,9 @@ def test_plugin_json_is_valid():
 @case
 def test_no_marketplace_json_present():
     """BUG GUARDED: a marketplace.json creeps back in beside plugin.json, which makes
-    the skills-directory loader read the folder as a marketplace and silently drop
-    Claire's commands. The clone-install path requires its ABSENCE."""
+    the loader read the folder as a marketplace and silently drop Claire's commands.
+    The real marketplace.json lives in the SEPARATE claire-marketplace repo; both
+    install paths require its ABSENCE here."""
     mkt = os.path.join(STAGING, ".claude-plugin", "marketplace.json")
     assert not os.path.exists(mkt), (
         "marketplace.json must NOT exist beside plugin.json — it breaks the "
