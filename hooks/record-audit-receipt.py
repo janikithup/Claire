@@ -134,6 +134,7 @@ def normalise(text):
 # (e.g. an install whose CLAUDE.md carries no subagent-latitude guidance). Observed
 # live 2026-06-17; the marker is the harness's own stable label for the injected coda.
 CODA_MARKERS = ("[standing invitation]",)
+TAG = "[DEPRIMED-BRIEF]"
 
 
 def strip_coda(norm_text):
@@ -143,6 +144,24 @@ def strip_coda(norm_text):
         if i != -1:
             cut = min(cut, i)
     return norm_text[:cut].strip()
+
+
+def brief_region(text):
+    """The CANONICAL brief = everything after the FIRST [DEPRIMED-BRIEF] tag (or the
+    whole text when untagged), coda-stripped + normalised.
+
+    This MUST stay byte-identical to adversarial-gate.py's brief_region(): the receipt
+    fingerprints this unit and the gate matches this unit, by EXACT equality. If the two
+    extractions drift, the false-NORECEIPT seam this closes reopens. Recording the
+    after-tag region (not the whole auditor prompt) is what makes a wrapper the caller
+    puts BEFORE the tag — "Here is a brief: [DEPRIMED-BRIEF] ..." — harmless: it is
+    excluded from the fingerprint, so a faithfully-audited brief still matches even when
+    the auditor prompt was wrapped. (Pre-0.6.2 this recorded the whole prompt, so any
+    such wrapper produced a spurious NORECEIPT — the false alarm that trained callers to
+    ignore the gate.)"""
+    idx = text.find(TAG)
+    region = text[idx + len(TAG):] if idx != -1 else text
+    return strip_coda(normalise(region))
 
 
 def prune(now):
@@ -198,7 +217,7 @@ def main():
     # logger omits it when None, and per-event metrics still compute without it.
     dispatch_id = data.get("tool_use_id")
     clean = is_clean_verdict(resp)
-    norm = strip_coda(normalise(brief))
+    norm = brief_region(brief)
     proof_written = False
     digest = None
 

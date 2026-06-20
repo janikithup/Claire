@@ -12,8 +12,13 @@ THE CONTRACT (observable):
   in  : one JSON object on stdin with tool_input.subagent_type, tool_input.prompt
         (the audited brief), and tool_response (the auditor's reply, in any shape).
   out : zero or one receipt files in a ".receipts/" dir beside the hook, each
-        {"ts": <float>, "text": <normalised brief>, "len": <int>}; exit code 0;
+        {"ts": <float>, "text": <canonical brief>, "len": <int>}; exit code 0;
         no stdout unless CLAIRE_DEBUG is truthy, then exactly one JSON line.
+        The CANONICAL brief (0.6.2) = the text AFTER the first [DEPRIMED-BRIEF] tag
+        when the prompt carries one, else the whole prompt; coda-stripped + normalised.
+        (Recording the after-tag region — not the whole prompt — is what lets the gate
+        match by exact equality against the critic's own after-tag region while excluding
+        any wrapper the caller put before the tag.)
   rule: a receipt is written WHEN AND ONLY WHEN the finished agent is the
         leak-auditor AND its verdict says the brief is genuinely neutral (passed).
 
@@ -120,6 +125,24 @@ def test_receipt_stores_the_audited_brief_normalised():
         "stored text must be the brief, lowercased + whitespace-collapsed + trimmed"
     # And not, say, the verdict or empty:
     assert CLEAN.lower() not in receipts[0]["text"], "must store the brief, not the verdict"
+
+
+@case
+def test_tagged_auditor_brief_stores_after_tag_region():
+    """0.6.2 contract. When the auditor brief carries a [DEPRIMED-BRIEF] tag (the skill now
+    sends the byte-identical tagged brief to BOTH auditor and critic), the receipt must
+    fingerprint the text AFTER the tag — the same canonical region the gate extracts — not
+    the whole prompt. So a wrapper the caller put before the tag, and the tag line itself,
+    are excluded, and the receipt matches the critic's after-tag region exactly. GUARDS the
+    regression where the receipt fingerprints the whole wrapped prompt and never matches the
+    gate's region — the false-NORECEIPT that trained callers to ignore the gate."""
+    body = "A team must choose between two vendors for a year. Outside read?"
+    wrapped = "Here is a brief to audit:\n[DEPRIMED-BRIEF]\n" + body
+    rc, out, receipts = _run(_payload(AUDITOR_BARE, wrapped, CLEAN))
+    assert len(receipts) == 1
+    assert receipts[0]["text"] == _expected_text(body), \
+        "receipt must store the after-tag region (canonical brief), excluding the wrapper and tag"
+    assert "deprimed-brief" not in receipts[0]["text"], "the tag itself must not be in the fingerprint"
 
 
 @case

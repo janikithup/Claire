@@ -56,24 +56,30 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOG = os.path.join(HERE, "gate-fire.log")
 RECEIPT_DIR = os.path.join(HERE, ".receipts")
 TTL_SECONDS = 2 * 60 * 60
-# A receipt must cover most of the dispatched brief, so auditing a tiny decoy and
-# dispatching a big leaky brief does not match. But a short brief legitimately
-# carries trailing boilerplate (e.g. the attack-license line the skill appends),
-# which would drag a pure ratio below the floor — so we ALSO accept a bounded
-# trailing remainder when the audited text is a prefix and is itself substantial.
-#
-# SPINE NOTE (0.5.3) — DO NOT "fix" the large-artifact false-block by excluding the
-# pasted artifact from this coverage denominator. It is tempting: a genuine brief that
-# inlines a big document drew a NORECEIPT, and marking the artifact + dropping it from
-# coverage would silence that. But the artifact reaches the critic; excluding it from
-# coverage WITHOUT auditing it lets a lean hidden inside the artifact ride to the critic
-# unchecked — the same shape as the decoy attack this floor exists to stop. The coverage
-# requirement is precisely what forces the WHOLE dispatched brief (artifact included) to
-# have been leak-audited. The real fix lives in the skill: audit the fully-assembled
-# brief, byte-for-byte what the critic receives. The gate stays strict on purpose.
-MIN_COVERAGE = 0.6
-TRAILING_SLACK = 240            # chars of boilerplate allowed after a prefix-matched brief
-MIN_RECEIPT_LEN_FOR_SLACK = 60  # the slack path needs a real brief, not a tiny decoy prefix
+# MATCHING (0.6.2): the receipt and the gate compare the CANONICAL brief — the text after
+# the first [DEPRIMED-BRIEF] tag, coda-stripped + normalised (see brief_region) — by EXACT
+# EQUALITY. No coverage ratio, no trailing slack. Why exact, not fuzzy:
+#   - The old fuzzy bridge (>=60% coverage OR prefix + <=240-char trailing slack) leaked
+#     BOTH ways. It FALSE-ALARMED when the auditor prompt carried a wrapper the critic
+#     region lacked (the receipt text was not contained) — the spurious NORECEIPT that
+#     trained callers to wave the gate off as "an accounting artifact". And it FALSE-PASSED
+#     a short steer (<=240 chars) appended to the critic brief AFTER a clean audit — the
+#     steer reached the critic UNCHECKED (observed live 2026-06-20: a clean audit on
+#     situation+question, then a steering "ask" appended before dispatch).
+#   - Exact equality on the canonical region closes both: a wrapper BEFORE the tag is
+#     excluded on both sides (no false alarm); ANYTHING appended after the audited brief,
+#     or any edit between audit and dispatch, changes the region (no false pass). NORECEIPT
+#     now means a genuine mismatch — which is what makes strict mode safe to turn on.
+# SPINE NOTE (0.5.3, still in force): a brief that inlines a big artifact must be audited AS
+# ASSEMBLED (artifact included). Exact equality enforces that for free (the artifact is part
+# of the canonical region on BOTH sides) and does NOT reintroduce the old size-based
+# false-block, because there is no ratio — a 50KB brief matches a 50KB receipt iff identical.
+# The fix for any residual mismatch lives in the SKILL: audit the byte-identical tagged brief
+# you send the critic. NEVER relax this match to paper over a caller that audited one thing and
+# dispatched another — that is the exact bypass the slack hole was.
+# Legitimate trailing boilerplate (the attack-license) goes BEFORE the tag (skill Step 3), so
+# the after-tag extraction already excludes it; arbitrary text AFTER the brief is no longer
+# tolerated, because "tolerate any short trailing text" WAS the slack hole that let a steer in.
 STRICT = os.environ.get("CLAIRE_GATE_STRICT", "").strip() not in ("", "0", "false", "False")
 # CLAIRE_DEBUG=1 surfaces an under-the-hood trace of every Claire dispatch — the gate's
 # decision, whether a receipt matched, the brief-region size — so a builder can watch the
@@ -152,8 +158,14 @@ def brief_region(prompt):
 
 
 def has_matching_receipt(region_norm):
-    """True if a fresh receipt's text is contained in the dispatched brief region and
-    covers most of it. Reads the receipts written by record-audit-receipt.py."""
+    """True if a fresh receipt's canonical brief is EXACTLY the dispatched brief region.
+
+    Exact equality (not fuzzy containment) on the canonical region — the unit both this
+    gate and record-audit-receipt.py compute via brief_region(). A faithfully-audited
+    brief produces an identical region on both sides and matches; any wrapper before the
+    tag is excluded on both sides (no false alarm); anything appended/edited after the
+    audited brief changes the region and does not match (no false pass). Reads the
+    receipts written by record-audit-receipt.py."""
     if not region_norm:
         return False
     now = time.time()
@@ -169,30 +181,30 @@ def has_matching_receipt(region_norm):
             continue
         if now - rec.get("ts", 0) > TTL_SECONDS:
             continue
-        if _covers(rec.get("text", ""), region_norm):
+        if rec.get("text", "") == region_norm:
             return True
     return False
 
 
-def _covers(text, region_norm):
-    """Does an audited brief `text` legitimately account for the dispatched region?
-
-    Two ways to qualify, both requiring the audited text to actually appear in the
-    region:
-      (a) it covers >=60% of the region (the normal case — region IS the brief), or
-      (b) it is a substantial PREFIX of the region with only a bounded remainder
-          after it (the brief, then a short boilerplate suffix like the attack-
-          license). The prefix + min-length conditions stop a tiny neutral decoy
-          from certifying a big leaky brief tacked on after it."""
-    if not text or text not in region_norm:
-        return False
-    if len(text) >= MIN_COVERAGE * len(region_norm):
-        return True
-    if (region_norm.startswith(text)
-            and len(text) >= MIN_RECEIPT_LEN_FOR_SLACK
-            and (len(region_norm) - len(text)) <= TRAILING_SLACK):
-        return True
-    return False
+def fresh_receipt_texts():
+    """The canonical brief of every still-fresh receipt — for the CLAIRE_DEBUG mismatch
+    dump only, so a builder can see the dispatched region next to what was actually
+    audited and spot WHY they differ (a wrapper, an appended ask, an unstripped harness
+    coda). Never affects the decision."""
+    now = time.time()
+    out = []
+    try:
+        for path in glob.glob(os.path.join(RECEIPT_DIR, "*.json")):
+            try:
+                with open(path) as fh:
+                    rec = json.load(fh)
+            except Exception:
+                continue
+            if now - rec.get("ts", 0) <= TTL_SECONDS:
+                out.append(rec.get("text", ""))
+    except Exception:
+        pass
+    return out
 
 
 def emit_block(reason):
@@ -216,6 +228,22 @@ def debug_trace(agent, decision, matched, region_len):
             "brief-region-len=%d · strict=%s"
             % (agent or "?", decision, "matched" if matched else "none",
                region_len, "on" if STRICT else "off"))
+
+
+def mismatch_dump(region_norm):
+    """CLAIRE_DEBUG only: show the dispatched canonical brief next to every fresh audited
+    brief, so a NORECEIPT can be DIAGNOSED (a wrapper? an ask appended after the audit? an
+    unstripped harness coda?) rather than waved off as 'an accounting artifact' — the very
+    dismissal that hid a real steer (2026-06-20). Visibility only; never affects the call."""
+    def t(s, n=300):
+        s = s or ""
+        return s if len(s) <= n else s[:n] + "…(+%d)" % (len(s) - n)
+    recs = fresh_receipt_texts()
+    lines = ["[CLAIRE TRACE] NORECEIPT diff — dispatched brief vs audited briefs:",
+             "  dispatched: %r" % t(region_norm)]
+    lines += ["  receipt[%d]: %r" % (i, t(r)) for i, r in enumerate(recs)] or \
+             ["  receipts: (none fresh)"]
+    return "\n".join(lines)
 
 
 NORECEIPT_MSG = (
@@ -327,13 +355,15 @@ def main():
     tag_present = TAG in prompt
     if tag_present:
         log("NORECEIPT agent=%s (tag, no receipt)" % agent)
+        # Under debug, append the dispatched-vs-audited diff so a NORECEIPT is diagnosable.
+        nr_msg = NORECEIPT_MSG + ("\n\n" + mismatch_dump(region) if DEBUG else "")
         if STRICT:
             log("BLOCK agent=%s (strict, no receipt)" % agent)
             record_pre("BLOCK")
-            emit_block(with_trace(NORECEIPT_MSG, "NORECEIPT/BLOCK"))
+            emit_block(with_trace(nr_msg, "NORECEIPT/BLOCK"))
         else:
             record_pre("NORECEIPT")
-            emit_context(with_trace(NORECEIPT_MSG, "NORECEIPT"))
+            emit_context(with_trace(nr_msg, "NORECEIPT"))
         return
 
     log("REMIND agent=%s (no %s)" % (agent, TAG))
