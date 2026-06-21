@@ -1,0 +1,15 @@
+{
+  "_comment": "FROZEN external source of truth — do NOT derive this from Claire's gate code. It must come from OUTSIDE the thing it checks, or it 'agrees with itself'.",
+  "_source": "Claude Code Agent (a.k.a. Task) tool input schema, transcribed 2026-06-21 from the live tool definition in a Claude Code session.",
+  "_why": "Claire's de-priming gate (hooks/adversarial-gate.py) REPLACES the entire Agent tool_input via updatedInput on the injection path. If that replacement omits a field the harness REQUIRES, the harness rejects the dispatch DOWNSTREAM of the gate's fail-open net — a hard block worse than not injecting (shipped broken in 0.8.0/0.8.1, hotfixed in 0.8.2 for the dropped 'description' field). This file pins what the harness requires, independent of the gate, so tests/unit/test_gate_inject_contract.py can tell whether the gate still complies.",
+  "_maintenance": "If the contract test fails: FIX THE GATE, do not weaken this file — UNLESS the harness genuinely changed its required fields, in which case update this file, bump the date in _source, and note it in CHANGELOG.",
+  "type": "object",
+  "required": ["description", "prompt"],
+  "properties": {
+    "description": { "type": "string" },
+    "prompt": { "type": "string" },
+    "subagent_type": { "type": "string" },
+    "model": { "type": "string" },
+    "run_in_background": { "type": "boolean" }
+  }
+}

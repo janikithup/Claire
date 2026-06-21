@@ -6,8 +6,9 @@ one directory per layer.
 
 ```
 tests/
-  unit/    deterministic — runs in CI, must be 100% green
-  evals/   distributional — measures Claire's non-deterministic behaviour
+  unit/      deterministic — runs in CI, must be 100% green
+  evals/     distributional — measures Claire's non-deterministic behaviour
+  contracts/ frozen external schemas Claire's output must satisfy (data, not tests)
 ```
 
 ## The two-layer philosophy
@@ -57,6 +58,7 @@ What's covered:
 | `test_gate_depriming.py` | the de-priming gate: REMIND on an adversarial dispatch with no `[DEPRIMED-BRIEF]` tag, silent PASS with it, namespace-prefixed agent names match, ordinary dispatches stay silent, fail-open on bad input. Driven by crafted stdin JSON straight into the hook. |
 | `test_nudge_trigger.py` | the discoverability nudge fires on critique-shaped prompts **and not** on ordinary ones (the negative half is what protects the product from becoming noise). |
 | `test_manifests.py` | `plugin.json` and `marketplace.json` are valid JSON with the required fields, the two names agree, and **the version is in sync across `plugin.json`, `marketplace.json`, and the top of `CHANGELOG.md`** — the classic "bumped the manifest, forgot the changelog" release bug. |
+| `test_gate_inject_contract.py` | the gate's injected `updatedInput` still satisfies the Agent/Task tool's **required-field schema**, checked against a *frozen external copy* (`../contracts/agent_tool_input.schema.json`) rather than the gate's own code — so **any** dropped required field is caught, not just the known `description` (the 0.8.0/0.8.1 hard-block, hotfixed 0.8.2). Driven through the shipped gate. |
 
 The gate and nudge tests drive the **shipped hooks** in `../hooks/`
 (`adversarial-gate.py` and `adv-nudge.py`) — so the unit suite pins the behaviour
@@ -135,5 +137,8 @@ mutation check), not just pass on the happy path:
   goes red;
 - bump `plugin.json`'s version without touching `CHANGELOG.md` → the version-sync
   test goes red.
+- drop a required field from the gate's injection (`new_input = dict(ti)` →
+  `new_input = {}`) → the contract test goes red with `missing required field:
+  description`.
 
 A test that stays green when you break the thing it tests is protecting nothing.
