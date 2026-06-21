@@ -111,6 +111,11 @@ _DECLINED_LEAN = re.compile(
 
 
 def _parse_verdict(text):
+    # 0. Machine-readable first-line verdict (the auditor's output contract) — authoritative
+    #    when present, kept in sync with the receipt hook's FIRST_LINE_VERDICT_RE (2026-06-21).
+    fl = re.match(r"[*_`>~\s]*verdict\b\s*[:\-—]\s*(NEUTRAL|LEAN)\b", text, re.IGNORECASE)
+    if fl:
+        return fl.group(1).upper()
     # 1. An ASSERTED lean token wins outright, even under a dismissive neutral opener.
     for m in _LEAN_TOKEN.finditer(text):
         ctx = text[max(0, m.start() - 48):m.start()].lower()

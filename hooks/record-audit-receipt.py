@@ -37,6 +37,11 @@ NEUTRAL_RE = re.compile(r"genuinely-neutral", re.IGNORECASE)
 # the fuzzy backstops below (2026-06-21: a fenced LEAN was certified clean exactly this way).
 VERDICT_LABEL_RE = re.compile(
     r"verdict\b\W{0,12}(?:genuinely[- ]?)?(LEAN|NEUTRAL)", re.IGNORECASE)
+# Machine-readable FIRST-LINE verdict (the auditor's output contract, >=2026-06-21):
+# "VERDICT: NEUTRAL" / "VERDICT: LEAN-<x>" as the opening line. A fixed token at a fixed
+# position is authoritative — it ends the prose-parsing guesswork that let fenced/qualified
+# verdicts be mis-read. Tolerant of leading markdown; anchored at the start via re.match.
+FIRST_LINE_VERDICT_RE = re.compile(r"[*_`>~\s]*verdict\b\s*[:\-—]\s*(NEUTRAL|LEAN)\b", re.IGNORECASE)
 # Contexts in which a LEAN-<x> token is NOT an asserted verdict: the auditor discussing a
 # lean it declined, or quoting one as an example. Used by the asserted-LEAN backstop so a
 # clean pass that merely mentions a lean is not misread as leaning.
@@ -65,6 +70,11 @@ def is_clean_verdict(resp):
       3. Else: a non-negated GENUINELY-NEUTRAL -> clean.
       4. Nothing decisive -> NOT clean (fail-closed: write no receipt, the gate nags).
     Erring toward "not clean" on ambiguity is the safe direction."""
+    # 0. Machine-readable first-line verdict (the auditor's output contract) is authoritative
+    #    when present — a fixed token at a fixed position, no prose to misread.
+    fl = FIRST_LINE_VERDICT_RE.match(resp or "")
+    if fl:
+        return fl.group(1).upper() == "NEUTRAL"
     m = VERDICT_LABEL_RE.search(resp)
     if m:
         if m.group(1).upper() == "LEAN":

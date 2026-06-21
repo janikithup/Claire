@@ -126,6 +126,26 @@ def test_fenced_faint_directional_verdict_is_lean_in_both_parsers():
     assert eval_parse(s) == "LEAN", "the eval parser must also read it LEAN (parsers must agree)"
 
 
+@case
+def test_machine_readable_first_line_verdict_is_authoritative():
+    """CONTRACT (>=2026-06-21): the auditor leads with a fixed `VERDICT: NEUTRAL` /
+    `VERDICT: LEAN-<x>` line. Both parsers must trust that line over any prose below — a fixed
+    token at a fixed position is the durable cure for the recurring prose-misreads. Parsers agree."""
+    # First-line LEAN wins even when the body is thick with 'genuinely-neutral' mentions:
+    lean = ("VERDICT: LEAN-option-two\n\nThe brief reads genuinely-neutral on a first skim, and a "
+            "lazy reader would land on GENUINELY-NEUTRAL — but the framing leans.")
+    assert is_clean_verdict(lean) is False
+    assert eval_parse(lean) == "LEAN"
+    # First-line NEUTRAL wins even when the body quotes a declined LEAN example:
+    neutral = ("VERDICT: NEUTRAL\n\nA stricter auditor could call LEAN-option-one; I do not. "
+               "Both sides are stated flatly.")
+    assert is_clean_verdict(neutral) is True
+    assert eval_parse(neutral) == "NEUTRAL"
+    # Tolerant of leading markdown on the verdict line:
+    assert is_clean_verdict("**VERDICT: LEAN-x**\nbody text") is False
+    assert eval_parse("**VERDICT: NEUTRAL**\nbody text") == "NEUTRAL"
+
+
 # --- 3. hook-vs-eval parser agreement ------------------------------------------
 
 @case
