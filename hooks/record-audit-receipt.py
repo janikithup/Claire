@@ -24,74 +24,33 @@ import sys, os, json, time, re, glob
 # The orchestrator's de-priming nonce, carried in the auditor prompt and the critic dispatch.
 RECEIPT_SENTINEL_RE = re.compile(r"\[CLAIRE-RECEIPT:([A-Za-z0-9_-]+)\]")
 
-# --- verdict parsing (fold-in 2: anchor to the verdict LINE, tolerant of its shape) ---------
-# A lean verdict token: uppercase LEAN-<option>. Case-sensitive so the auditor's lowercase
-# prose ("a real lean", "leans neither way") is never mistaken for the verdict token.
-LEAN_TOKEN = re.compile(r"(?<![A-Za-z])LEAN-\w")
-NEUTRAL_RE = re.compile(r"genuinely-neutral", re.IGNORECASE)
-# Tolerant verdict-LABEL line match (mirrors tests/evals/run_evals.py): catches
-# "**Verdict** — GENUINELY-NEUTRAL", "Verdict: LEAN-x", "Verdict\nNEUTRAL", and the
-# markdown-FENCED "**Verdict**\n\n`LEAN-x`" — without requiring a brittle literal "VERDICT:"
-# prefix the live auditor is not contracted to emit. The window spans up to 12 non-word chars
-# (markdown stars, fences, colons, newlines) so a fenced verdict is not missed and mis-read by
-# the fuzzy backstops below (2026-06-21: a fenced LEAN was certified clean exactly this way).
-VERDICT_LABEL_RE = re.compile(
-    r"verdict\b\W{0,12}(?:genuinely[- ]?)?(LEAN|NEUTRAL)", re.IGNORECASE)
-# Machine-readable FIRST-LINE verdict (the auditor's output contract, >=2026-06-21):
-# "VERDICT: NEUTRAL" / "VERDICT: LEAN-<x>" as the opening line. A fixed token at a fixed
-# position is authoritative — it ends the prose-parsing guesswork that let fenced/qualified
-# verdicts be mis-read. Tolerant of leading markdown; anchored at the start via re.match.
-FIRST_LINE_VERDICT_RE = re.compile(r"[*_`>~\s]*verdict\b\s*[:\-—]\s*(NEUTRAL|LEAN)\b", re.IGNORECASE)
-# Contexts in which a LEAN-<x> token is NOT an asserted verdict: the auditor discussing a
-# lean it declined, or quoting one as an example. Used by the asserted-LEAN backstop so a
-# clean pass that merely mentions a lean is not misread as leaning.
-DECLINED_LEAN_RE = re.compile(
-    r"(?:declin|considered|faint|reject|hypothetical|err[- ]?toward|tempt|not\s+a\s+real|"
-    r"no\s+real\s+lean|weigh|might\s+call|could\s+call|nearly|example|e\.g\.|such\s+as|"
-    r"or\s+lean)", re.IGNORECASE)
-
-
-def _asserted_lean(text):
-    """True if `text` contains a LEAN-<x> token that is NOT in a declined/example context."""
-    for m in LEAN_TOKEN.finditer(text):
-        ctx = text[max(0, m.start() - 48):m.start()].lower()
-        if not DECLINED_LEAN_RE.search(ctx):
-            return True
-    return False
+# --- verdict parsing: READ the auditor's machine verdict line, do not GUESS from prose --------
+# The auditor's output contract is to END with a fixed sentinel line — `CLAIRE-VERDICT: NEUTRAL`
+# or `CLAIRE-VERDICT: LEAN`. We READ that line; we do NOT reverse-engineer the verdict out of
+# free model prose. The format is one WE define for the auditor, so parsing is deterministic —
+# which is the whole point: a regex hunting a verdict inside random model output is a losing
+# game that accreted edge-case bugs (markdown fences, "faint"/"closer to neutral" qualifiers,
+# the innocent "tip" inside "multiple"). The sentinel ends that entire class of bug. Tolerant of
+# an optional "genuinely-" before NEUTRAL; case-insensitive. NOT line-anchored: the token is
+# distinctive enough that an accidental prose occurrence is implausible, last-occurrence wins so a
+# quote in the analysis is superseded by the real final verdict line, and matching anywhere also
+# survives a structured/JSON-escaped tool_response (where real newlines become literal "\n" and a
+# `^`-anchor would miss the line). (Distinct from RECEIPT_SENTINEL_RE above, which carries the
+# brief's nonce — this one carries the verdict.)
+VERDICT_SENTINEL_RE = re.compile(
+    r"(?i)claire-verdict[ \t]*[:=][ \t]*(?:genuinely[- ]?)?(neutral|lean)\b")
 
 
 def is_clean_verdict(resp):
-    """True iff the auditor PASSED the brief (verdict NEUTRAL, no asserted lean).
+    """True iff the auditor's machine verdict line says NEUTRAL.
 
-    Verdict-LINE anchored, conservative toward de-priming:
-      1. If a verdict LABEL line is present, it is authoritative: LEAN -> not clean;
-         NEUTRAL -> clean UNLESS an asserted LEAN appears AFTER it (a reversal).
-      2. No label line: an asserted LEAN anywhere -> not clean.
-      3. Else: a non-negated GENUINELY-NEUTRAL -> clean.
-      4. Nothing decisive -> NOT clean (fail-closed: write no receipt, the gate nags).
-    Erring toward "not clean" on ambiguity is the safe direction."""
-    # 0. Machine-readable first-line verdict (the auditor's output contract) is authoritative
-    #    when present — a fixed token at a fixed position, no prose to misread.
-    fl = FIRST_LINE_VERDICT_RE.match(resp or "")
-    if fl:
-        return fl.group(1).upper() == "NEUTRAL"
-    m = VERDICT_LABEL_RE.search(resp)
-    if m:
-        if m.group(1).upper() == "LEAN":
-            return False
-        return not _asserted_lean(resp[m.end():])  # NEUTRAL line, clean unless reversed after
-    if _asserted_lean(resp):
-        return False
-    for nm in NEUTRAL_RE.finditer(resp):
-        before = resp[max(0, nm.start() - 24):nm.start()].lower()
-        # Skip a GENUINELY-NEUTRAL that is negated ("not ... neutral") OR merely directional /
-        # hypothetical ("would move me toward GENUINELY-NEUTRAL", "closer to neutral") — neither
-        # is the asserted verdict (2026-06-21: a directional mention false-cleaned a LEAN).
-        if re.search(r"(?:not|n't|toward|towards|move\w*|would|closer|nearer|approach\w*|"
-                     r"shift\w*|drift\w*|tip\w*|push\w*)\b[\s\W]*$", before):
-            continue
-        return True
-    return False
+    The auditor MUST emit `CLAIRE-VERDICT: NEUTRAL` or `CLAIRE-VERDICT: LEAN` as its final line.
+    We trust ONLY that line. Absent or LEAN -> NOT clean (fail closed: write no receipt, the gate
+    nags). A missing/garbled verdict can therefore only ever false-NAG a clean brief (safe), never
+    false-CLEAN a leaning one (the de-priming hole). Last occurrence wins — the auditor's final
+    verdict, in case it restates the token while reasoning."""
+    matches = VERDICT_SENTINEL_RE.findall(resp or "")
+    return bool(matches) and matches[-1].lower() == "neutral"
 
 
 AUDITOR_NAMES = {"brief-leak-auditor"}
@@ -214,8 +173,8 @@ def main():
 
     if DEBUG:
         if not clean:
-            label = "LEAN" if _asserted_lean(resp) or (VERDICT_LABEL_RE.search(resp) and
-                     VERDICT_LABEL_RE.search(resp).group(1).upper() == "LEAN") else "not-clean"
+            saw = VERDICT_SENTINEL_RE.findall(resp or "")
+            label = "LEAN" if (saw and saw[-1].lower() == "lean") else "no-verdict-line"
             emit_trace("[CLAIRE TRACE] receipt: verdict=%s · no receipt written" % label)
         elif not nonce:
             emit_trace("[CLAIRE TRACE] receipt: verdict=CLEAN · brief carried no "

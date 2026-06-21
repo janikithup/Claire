@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """
-UNIT TEST — the eval runner's verdict parser (run_evals._parse_verdict).
+UNIT TEST — the eval runner's verdict reader (run_evals._parse_verdict).
 
-The leak-auditor's REAL output, when it flags a lean, often OPENS by dismissing
-neutrality ("GENUINELY-NEUTRAL - does not apply here ... Verdict: LEAN-x"). A naive
-parser that grabs the first NEUTRAL/LEAN token reads that as NEUTRAL and mis-scores a
-LEAN fixture as a pass — the same class of hole found in the receipt hook's
-is_clean_verdict (2026-06-19, from observing live auditor output). This pins the eval
-parser against the auditor's actual verdict vocabulary.
-
-The parser is plumbing (deterministic), so it is unit-tested here, not eval'd.
+It reads the auditor's machine verdict line (CLAIRE-VERDICT: NEUTRAL | LEAN), identical to the
+receipt hook's is_clean_verdict. Deterministic, so unit-tested here. The prose-guessing parser
+this replaced is gone — see test_verdict_parser.py and hooks/record-audit-receipt.py for why a
+regex on random model output was the bug source (2026-06-21).
 """
 import importlib.util
 import os
@@ -31,41 +27,32 @@ def case(fn):
 
 
 @case
-def test_lean_with_dismissive_neutral_opener_parses_lean():
-    """BUG GUARDED (eval analog of the receipt enforcement hole): a LEAN verdict that
-    OPENS 'GENUINELY-NEUTRAL - does not apply here ... Verdict: LEAN-x' must parse as
-    LEAN, not be hijacked by the leading clean token."""
-    resp = ("GENUINELY-NEUTRAL — does not apply here. This brief carries a clear lean.\n"
-            "**Verdict:** LEAN-the-plan-is-sound")
-    assert parse(resp) == "LEAN", "dismissive-neutral opener must not be read as NEUTRAL"
+def test_sentinel_neutral_and_lean():
+    """The machine verdict line parses to its token."""
+    assert parse("Both options stated flatly.\nCLAIRE-VERDICT: NEUTRAL") == "NEUTRAL"
+    assert parse("The framing tilts.\nCLAIRE-VERDICT: LEAN") == "LEAN"
 
 
 @case
-def test_negated_neutral_then_lean_parses_lean():
-    """BUG GUARDED: 'NOT genuinely-neutral. LEAN-A' contains the clean token verbatim; a
-    first-token grab wrongly reads NEUTRAL. The asserted lean must win."""
-    assert parse("This is NOT genuinely-neutral. LEAN-A: 'obviously' loads the answer.") == "LEAN"
+def test_absent_sentinel_is_none():
+    """No machine verdict line -> None (fail-closed), whatever the surrounding prose says — the
+    dismissive-opener and directional-mention shapes that broke the old parser are simply None."""
+    assert parse("GENUINELY-NEUTRAL — no, it leans. A LEAN-x sits in the framing.") is None
+    assert parse("the framing would only move toward genuinely-neutral if reworded") is None
+    assert parse("") is None
 
 
 @case
-def test_genuinely_neutral_parses_neutral():
-    """A real clean verdict must still parse NEUTRAL."""
-    assert parse("**Verdict:** GENUINELY-NEUTRAL\nThe brief states both options flatly.") == "NEUTRAL"
+def test_last_occurrence_wins():
+    """Only the final verdict line counts; an earlier restated line is superseded."""
+    assert parse("CLAIRE-VERDICT: NEUTRAL\n(reconsidering)\nCLAIRE-VERDICT: LEAN") == "LEAN"
 
 
 @case
-def test_declined_lean_in_clean_pass_parses_neutral():
-    """A clean pass that merely DISCUSSES a declined lean must still parse NEUTRAL."""
-    resp = "**Verdict:** GENUINELY-NEUTRAL\nI considered a faint LEAN-One but am declining."
-    assert parse(resp) == "NEUTRAL"
-
-
-@case
-def test_fake_dispatcher_verdict_lines_still_parse():
-    """The deterministic --fake dispatcher emits 'VERDICT: LEAN/NEUTRAL' — must still parse,
-    so the eval smoke test keeps working."""
-    assert parse("VERDICT: LEAN\nThis brief leaks the author's expected answer.") == "LEAN"
-    assert parse("VERDICT: NEUTRAL\nThe brief states the situation without a conclusion.") == "NEUTRAL"
+def test_fake_dispatcher_lines_parse():
+    """The --fake dispatcher now ends with the sentinel — must parse, so the eval smoke keeps working."""
+    assert parse("leaks the answer\nCLAIRE-VERDICT: LEAN") == "LEAN"
+    assert parse("states it flatly\nCLAIRE-VERDICT: NEUTRAL") == "NEUTRAL"
 
 
 if __name__ == "__main__":

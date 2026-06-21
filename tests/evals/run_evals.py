@@ -73,10 +73,10 @@ def fake_dispatch(agent, prompt):
                 lean = "the plan is sound (approve the plan as-is)"
             else:
                 lean = "a survey is the way to go"
-            return ("VERDICT: LEAN\nThis brief leaks the author's expected answer: "
-                    "it pushes '%s' and asks only for confirmation, "
-                    "not a genuine assessment." % lean)
-        return "VERDICT: NEUTRAL\nThe brief states the situation without smuggling a conclusion."
+            return ("This brief leaks the author's expected answer: it pushes '%s' and asks "
+                    "only for confirmation, not a genuine assessment.\nCLAIRE-VERDICT: LEAN" % lean)
+        return ("The brief states the situation without smuggling a conclusion.\n"
+                "CLAIRE-VERDICT: NEUTRAL")
     if agent == "blank-slate-advisor":
         # produce a structural objection; vary by whether the brief was primed
         if "survey" in p and ("i'm sure" in p or "confirm" in p):
@@ -97,45 +97,18 @@ def fake_dispatch(agent, prompt):
 # SCORERS — each returns (passed: bool, reason: str) for one sample.
 # ---------------------------------------------------------------------------
 
-# The leak-auditor's verdict vocabulary. A lean verdict is an uppercase "LEAN-<option>"
-# token; a clean verdict is "GENUINELY-NEUTRAL". When it flags a lean the auditor often
-# OPENS by dismissing neutrality ("GENUINELY-NEUTRAL - does not apply here ... Verdict:
-# LEAN-x"), so a naive first-token grab mis-reads that as NEUTRAL. We therefore treat an
-# ASSERTED lean (a LEAN-<x> token NOT in a declined/hypothetical context) as decisive,
-# matching the receipt hook's is_clean_verdict. (Hole found 2026-06-19 from live output.)
-_LEAN_TOKEN = re.compile(r"(?<![A-Za-z])LEAN-\w")
-_NEUTRAL_RE = re.compile(r"genuinely-neutral", re.IGNORECASE)
-_DECLINED_LEAN = re.compile(
-    r"(?:declin|considered|faint|reject|hypothetical|tempt|weigh|might call|"
-    r"could call|nearly)", re.IGNORECASE)
+# The auditor's machine-readable verdict line (its output contract) — kept IDENTICAL to the
+# receipt hook's VERDICT_SENTINEL_RE. We read this line; we do not parse prose. (Full rationale
+# in hooks/record-audit-receipt.py: a regex on random model output is the bug source we removed.)
+_VERDICT_SENTINEL = re.compile(
+    r"(?i)claire-verdict[ \t]*[:=][ \t]*(?:genuinely[- ]?)?(neutral|lean)\b")
 
 
 def _parse_verdict(text):
-    # 0. Machine-readable first-line verdict (the auditor's output contract) — authoritative
-    #    when present, kept in sync with the receipt hook's FIRST_LINE_VERDICT_RE (2026-06-21).
-    fl = re.match(r"[*_`>~\s]*verdict\b\s*[:\-—]\s*(NEUTRAL|LEAN)\b", text, re.IGNORECASE)
-    if fl:
-        return fl.group(1).upper()
-    # 1. An ASSERTED lean token wins outright, even under a dismissive neutral opener.
-    for m in _LEAN_TOKEN.finditer(text):
-        ctx = text[max(0, m.start() - 48):m.start()].lower()
-        if not _DECLINED_LEAN.search(ctx):
-            return "LEAN"
-    # 2. An explicit verdict label — tolerant of markdown/fences (e.g. "**Verdict**\n\n`LEAN-x`"),
-    #    kept in sync with the receipt hook's VERDICT_LABEL_RE (2026-06-21 fenced-verdict gap).
-    m = re.search(r"verdict\b\W{0,12}(?:genuinely[- ]?)?(LEAN|NEUTRAL)", text, re.IGNORECASE)
-    if m:
-        return m.group(1).upper()
-    # 3. A non-negated, non-directional GENUINELY-NEUTRAL ("would move toward neutral" is not it).
-    for m in _NEUTRAL_RE.finditer(text):
-        before = text[max(0, m.start() - 24):m.start()].lower()
-        if re.search(r"(?:not|n't|toward|towards|move\w*|would|closer|nearer|approach\w*|"
-                     r"shift\w*|drift\w*|tip\w*|push\w*)\b[\s\W]*$", before):
-            continue
-        return "NEUTRAL"
-    # 4. Fallback: first standalone LEAN/NEUTRAL token.
-    m = re.search(r"\b(LEAN|NEUTRAL)\b", text, re.IGNORECASE)
-    return m.group(1).upper() if m else None
+    """'NEUTRAL' / 'LEAN' from the auditor's CLAIRE-VERDICT line, or None if absent (fail-closed,
+    mirroring the hook's is_clean_verdict). Last occurrence wins."""
+    matches = _VERDICT_SENTINEL.findall(text or "")
+    return matches[-1].upper() if matches else None
 
 
 def score_verdict_equals(sample, fixture, params):

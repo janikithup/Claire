@@ -54,7 +54,8 @@ safe to enable.
    > choose between Supplier A and Supplier B, and what would you most want to know
    > before recommending one?
 
-   It should return a clean verdict (GENUINELY-NEUTRAL). The brief is deliberately
+   It should return a clean read whose final line is the machine verdict `CLAIRE-VERDICT: NEUTRAL`
+   (that fixed line, not the prose, is what writes the receipt). The brief is deliberately
    *textured* — two options described on matched dimensions (size, fee, track record)
    with no loaded wording — NOT a one-line "both options are equal" abstraction. A
    too-thin brief makes the auditor (correctly) refuse to audit it ("there's no brief

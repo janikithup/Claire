@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-UNIT TEST — leak-audit RECEIPT writer, INJECTION design (>=0.8.0).
+UNIT TEST — leak-audit RECEIPT writer, sentinel-verdict design (>=2026-06-21).
 
-record-audit-receipt.py is a PostToolUse hook. On a CLEAN brief-leak-auditor verdict it
-stores the audited brief VERBATIM, keyed by the orchestrator nonce carried in the auditor
-prompt as [CLAIRE-RECEIPT:<nonce>]. The companion gate later injects that brief into the
-critic. No fingerprint, no normalisation — the bytes the auditor judged are the bytes
-stored (only the nonce marker is stripped, cosmetically).
+record-audit-receipt.py is a PostToolUse hook. On a CLEAN brief-leak-auditor verdict it stores
+the audited brief VERBATIM, keyed by the orchestrator nonce carried in the auditor prompt as
+[CLAIRE-RECEIPT:<nonce>]. The companion gate later injects that brief into the critic. No
+fingerprint, no normalisation — the bytes the auditor judged are the bytes stored (only the nonce
+marker is stripped, cosmetically).
+
+"Clean" is now read from the auditor's MACHINE verdict line — `CLAIRE-VERDICT: NEUTRAL` — not
+guessed from prose. So these tests pin the EFFECT contract (write iff clean-sentinel + nonce +
+auditor) against the sentinel, and no longer chase prose edge cases (those bugs are gone by
+construction; the prose around the sentinel is irrelevant). Each assertion names the bug it guards.
 
 Receipt = .receipts/<nonce>.json : {"ts": <float>, "nonce": <str>, "brief": <verbatim>}.
-Rule: written WHEN AND ONLY WHEN the auditor returns clean AND the brief carries a nonce.
-This file also pins the tolerant verdict-line parser (fold-in 2): a clean verdict that
-merely quotes/declines a LEAN example must still write; a real lean (even opening with a
-dismissed 'GENUINELY-NEUTRAL') must not. Each assertion names the bug it guards.
 """
 import json
 import os
@@ -24,7 +25,11 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.abspath(os.path.join(HERE, "..", "..", "hooks", "record-audit-receipt.py"))
 
-CLEAN = "GENUINELY-NEUTRAL"
+# A clean / leaning auditor response is one that ENDS with the machine verdict line. The prose
+# above the line is deliberately noisy (mentions "lean", "neutral") to prove it is ignored.
+CLEAN = "The brief states both options flatly; it leans neither way.\nCLAIRE-VERDICT: NEUTRAL"
+LEAN = "The framing tilts toward the first option.\nCLAIRE-VERDICT: LEAN"
+NO_VERDICT = "GENUINELY-NEUTRAL, I think — though the framing maybe leans. (no machine line)"
 AUDITOR = "claire:brief-leak-auditor"
 AUDITOR_BARE = "brief-leak-auditor"
 SENTINEL_RE = re.compile(r"\[CLAIRE-RECEIPT:([A-Za-z0-9_-]+)\]")
@@ -73,13 +78,12 @@ def case(fn):
     return fn
 
 
-# --- the core: clean + nonce writes one verbatim, nonce-keyed receipt ------------
+# --- the core: clean sentinel + nonce writes one verbatim, nonce-keyed receipt ----
 
 @case
 def test_clean_verdict_with_nonce_writes_one_receipt():
-    """BUG GUARDED: a passed brief leaves no receipt, so the gate can never inject and nags
-    every clean run. A clean verdict on a nonce-tagged brief must write exactly one receipt,
-    keyed by the nonce."""
+    """BUG GUARDED: a passed brief leaves no receipt, so the gate can never inject and nags every
+    clean run. A CLAIRE-VERDICT: NEUTRAL on a nonce-tagged brief must write exactly one receipt."""
     brief = "A team must pick one of two suppliers. What is the outside read?"
     rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("aa11bb22", brief), CLEAN))
     assert rc == 0
@@ -89,9 +93,9 @@ def test_clean_verdict_with_nonce_writes_one_receipt():
 
 @case
 def test_receipt_stores_brief_verbatim_not_normalised():
-    """BUG GUARDED: the receipt stores a normalised/lowercased fingerprint, so the injected
-    brief differs from what the auditor read. The brief must be stored VERBATIM — case and
-    structure preserved — with only the [CLAIRE-RECEIPT:<nonce>] marker stripped."""
+    """BUG GUARDED: the receipt stores a normalised/lowercased fingerprint, so the injected brief
+    differs from what the auditor read. The brief must be stored VERBATIM — case and structure
+    preserved — with only the [CLAIRE-RECEIPT:<nonce>] marker stripped."""
     brief = ("Your job is to find the strongest real objection.\n\n"
              "Situation: choose between Vendor-X and Vendor-Y. State the trade-offs.")
     rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("vx01", brief), CLEAN))
@@ -104,8 +108,7 @@ def test_receipt_stores_brief_verbatim_not_normalised():
 @case
 def test_clean_verdict_without_nonce_writes_nothing():
     """BUG GUARDED: a clean audit on a brief that carries NO nonce writes a receipt keyed by
-    nothing — the handshake was not run. With no nonce there is nothing to inject against, so
-    no receipt is written and the dispatch will (correctly) fail closed."""
+    nothing — the handshake was not run. No nonce -> nothing to inject against -> no receipt."""
     brief = "A team must pick one of two suppliers. Outside read?"
     rc, out, receipts = run_hook(_post(AUDITOR_BARE, brief, CLEAN))
     assert receipts == [], "a clean verdict with no nonce must write no receipt"
@@ -120,87 +123,56 @@ def test_receipt_schema_shape():
     assert isinstance(r["ts"], float) and isinstance(r["nonce"], str) and isinstance(r["brief"], str)
 
 
-# --- leaning verdicts write nothing ---------------------------------------------
+# --- leaning / sentinel-less verdicts write nothing -----------------------------
 
 @case
 def test_lean_verdict_writes_no_receipt():
-    """BUG GUARDED: a leaning brief earns a receipt and then sails through the gate. A LEAN
-    verdict must write NOTHING."""
-    brief = "Obviously option A is the waste; find what's wrong with it."
-    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("ln01", brief), "LEAN-A"))
+    """BUG GUARDED: a leaning brief earns a receipt and then sails through the gate. A
+    CLAIRE-VERDICT: LEAN line must write NOTHING."""
+    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("ln01", "Find what's wrong with A."), LEAN))
     assert receipts == [], "a leaning verdict must write no receipt"
 
 
 @case
-def test_denies_neutrality_writes_no_receipt():
-    """BUG GUARDED: 'the brief is NOT neutral' contains the neutral token and is mistaken for
-    a pass. A verdict that denies neutrality must not earn a receipt."""
-    brief = "Clearly we should ship Friday; just confirm it."
-    deny = "Assessment: the brief is not neutral — it leans toward shipping. LEAN-SHIP."
-    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("dn01", brief), deny))
-    assert receipts == [], "a verdict denying neutrality must not earn a receipt"
+def test_no_verdict_line_fails_closed():
+    """BUG GUARDED (the whole point of the sentinel): an auditor response with NO machine verdict
+    line — however neutral its prose sounds — must NOT earn a receipt. The verdict is read from the
+    line we define, not guessed from prose, so a missing line fails closed (the gate nags)."""
+    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("nv01", "Two vendors, one slot."), NO_VERDICT))
+    assert receipts == [], "a response with no CLAIRE-VERDICT line must write no receipt"
 
 
 @case
-def test_dismissive_neutral_opener_before_lean_writes_nothing():
-    """BUG GUARDED (de-priming ENFORCEMENT HOLE): the auditor flags a lean but OPENS by
-    dismissing neutrality ('GENUINELY-NEUTRAL — does not apply here ... Verdict: LEAN-x'). The
-    clean token appears first; a naive first-token grab certifies a LEANING brief. The asserted
-    LEAN verdict line must win."""
-    brief = "Gut-check the test plan: confirm it's solid?"
-    resp = ("GENUINELY-NEUTRAL — does not apply here. This brief carries a clear lean.\n\n"
-            "**Verdict:** LEAN-the-plan-is-sound (approve the plan as-is)\n\n"
-            "Tells: 'guaranteed-green suite' frames the weakness as a feature.")
-    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("dm01", brief), resp))
-    assert receipts == [], "a LEAN verdict opening with a dismissed GENUINELY-NEUTRAL must not earn a receipt"
+def test_last_verdict_line_wins():
+    """BUG GUARDED: the auditor restates the line while reasoning, then lands its real verdict. The
+    LAST verdict line decides — a NEUTRAL it later overrides with LEAN must not earn a receipt."""
+    resp = ("On a first pass I'd write CLAIRE-VERDICT: NEUTRAL.\n\n"
+            "But the closing beat tilts it.\n\nCLAIRE-VERDICT: LEAN")
+    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("lw01", "Gut-check the plan."), resp))
+    assert receipts == [], "a verdict ending in LEAN must not earn a receipt even if NEUTRAL appears earlier"
 
 
-# --- the tolerant parser: clean passes that merely MENTION a lean still write ----
+# --- prose around the sentinel is irrelevant ------------------------------------
 
 @case
-def test_pass_discussing_a_declined_lean_still_writes():
-    """BUG GUARDED: the auditor passes a brief yet discusses a lean it weighed and declined.
-    The brief PASSED, so a receipt must still land — a scan that suppresses on any LEAN token
-    sends a clean run into a false-warning loop."""
-    brief = "A school has one open slot and two clubs apply; pick one."
-    resp = ("Verdict: " + CLEAN + ".\n\n"
-            "Reasoning: I weighed whether to call a faint LEAN-One toward the first-named club, "
-            "then declined — the concreteness is intrinsic to the option, not authorial.")
-    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("dl01", brief), resp))
-    assert len(receipts) == 1, "a passing verdict discussing a declined lean must still write a receipt"
+def test_clean_sentinel_with_lean_discussion_still_writes():
+    """BUG GUARDED (the false-warn class the sentinel retires): a clean audit whose PROSE weighs
+    or quotes a lean (LEAN-x, "leans", "closer to neutral") must still write — only the machine
+    line is read, so the prose cannot suppress a clean pass."""
+    resp = ("I weighed a faint LEAN-One toward the first club and quoted e.g. LEAN-road-A as the "
+            "shape it would take, then declined; it drifts closer to neutral and lands there.\n\n"
+            "CLAIRE-VERDICT: NEUTRAL")
+    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("pr01", "Two clubs, one slot."), resp))
+    assert len(receipts) == 1, "prose discussing a lean must not block a clean CLAIRE-VERDICT: NEUTRAL"
 
 
 @case
-def test_clean_verdict_quoting_a_lean_example_still_writes():
-    """BUG GUARDED (fold-in 2, the false-warn this redesign targets): a clean audit that quotes
-    the literal LEAN-<x> EXAMPLE from the auditor's own contract must still write a receipt. The
-    verdict-LINE anchor + example-context guard must not read the quoted example as a verdict."""
-    brief = "Two roads diverge; which to take and why?"
-    resp = ("Verdict: " + CLEAN + "\n\n"
-            "(For reference, had it leaned I would have written e.g. LEAN-road-A; it does not.)")
-    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("ex01", brief), resp))
-    assert len(receipts) == 1, "a clean verdict quoting a LEAN example must still write a receipt"
-
-
-@case
-def test_markdown_verdict_label_shape_writes():
-    """BUG GUARDED: the live auditor emits '**Verdict** — GENUINELY-NEUTRAL', not a literal
-    'VERDICT:' prefix. The tolerant label parser must recognise the markdown-label shape and
-    write the receipt — a brittle prefix would fail-close every clean audit."""
-    brief = "Build it in-house or buy it off the shelf?"
-    resp = "**Verdict** — GENUINELY-NEUTRAL\n\nBoth options stated flatly with symmetric detail."
-    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("md01", brief), resp))
-    assert len(receipts) == 1, "the '**Verdict** — GENUINELY-NEUTRAL' shape must write a receipt"
-
-
-@case
-def test_clean_verdict_mentioning_cleanly_still_writes():
-    """BUG GUARDED: a blunt 'lean' substring check fails a clean verdict that uses ordinary
-    words ('cleanly', 'leans neither way'). Such a verdict must still write."""
-    brief = "Two vendors, one slot — which, and why?"
-    resp = "GENUINELY-NEUTRAL\nThe brief is cleanly framed and leans neither way."
-    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("cl01", brief), resp))
-    assert len(receipts) == 1
+def test_markdown_around_sentinel_writes():
+    """BUG GUARDED: the auditor wraps the line in emphasis/blockquote markup. The reader tolerates
+    cosmetic markup around the sentinel, so '**CLAIRE-VERDICT: NEUTRAL**' must still write."""
+    resp = "Both options stated flatly with symmetric detail.\n\n**CLAIRE-VERDICT: NEUTRAL**"
+    rc, out, receipts = run_hook(_post(AUDITOR, _tagged("md01", "Build or buy?"), resp))
+    assert len(receipts) == 1, "markdown around the sentinel must still write a receipt"
 
 
 # --- only the auditor, recognised namespaced or bare ----------------------------
@@ -220,10 +192,8 @@ def test_bare_auditor_recognised():
 @case
 def test_non_auditor_writes_nothing():
     """BUG GUARDED: any agent's clean-looking output mints a receipt. Only the leak-auditor's
-    results may write one."""
-    rc, out, receipts = run_hook(_post(
-        "adversarial-review", _tagged("na01", "Attack this plan."),
-        "The plan reads " + CLEAN + " in tone, but the rollback step is missing."))
+    results may write one — even a perfectly-formed CLAIRE-VERDICT: NEUTRAL from another agent."""
+    rc, out, receipts = run_hook(_post("adversarial-review", _tagged("na01", "Attack this plan."), CLEAN))
     assert receipts == [], "only the leak-auditor's results may write a receipt"
 
 
@@ -231,25 +201,22 @@ def test_non_auditor_writes_nothing():
 
 @case
 def test_clean_verdict_in_content_blocks_writes():
-    brief = "A scheduling clash between two teams — outside view?"
-    blocks = [{"type": "text", "text": CLEAN + " — both sides stated flatly."}]
-    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("cb01", brief), blocks))
+    blocks = [{"type": "text", "text": CLEAN}]
+    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("cb01", "A scheduling clash — view?"), blocks))
     assert len(receipts) == 1, "a clean verdict in content blocks must still write"
 
 
 @case
 def test_lean_verdict_in_content_blocks_writes_nothing():
-    brief = "Obviously we go with A; poke holes in it."
-    blocks = [{"type": "text", "text": "LEAN-A — 'obviously' loads the answer."}]
-    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("cb02", brief), blocks))
+    blocks = [{"type": "text", "text": LEAN}]
+    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("cb02", "Poke holes in A."), blocks))
     assert receipts == [], "a leaning verdict in content blocks must write nothing"
 
 
 @case
 def test_clean_verdict_in_dict_response_writes():
-    brief = "Hire a contractor or train an intern?"
     as_dict = {"content": [{"type": "text", "text": CLEAN}]}
-    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("dc01", brief), as_dict))
+    rc, out, receipts = run_hook(_post(AUDITOR_BARE, _tagged("dc01", "Hire or train?"), as_dict))
     assert len(receipts) == 1, "a clean verdict in a dict response must still write"
 
 
@@ -276,7 +243,7 @@ def test_debug_on_clean_emits_one_trace_and_still_writes():
 @case
 def test_debug_on_lean_emits_trace_and_writes_nothing():
     rc, out, receipts = run_hook(
-        _post(AUDITOR, _tagged("db03", "Obviously A; poke holes."), "LEAN-B"),
+        _post(AUDITOR, _tagged("db03", "Obviously A; poke holes."), LEAN),
         env={"CLAIRE_DEBUG": "1"})
     assert receipts == [], "debug must not turn a lean into a receipt"
     lines = [ln for ln in out.splitlines() if ln.strip()]

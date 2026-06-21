@@ -199,7 +199,7 @@ def test_receipt_logs_post_neutral_with_proof():
     out, events = _run(RECEIPT, {
         "tool_input": {"subagent_type": "claire:brief-leak-auditor",
                        "prompt": "[CLAIRE-RECEIPT:lp01]\nTwo vendors, one slot — which, and why? State the trade-offs."},
-        "tool_response": "GENUINELY-NEUTRAL\nBoth stated flatly.",
+        "tool_response": "Both stated flatly.\nCLAIRE-VERDICT: NEUTRAL",
         "tool_use_id": "tu_post1"})
     assert len(events) == 1, "auditor completion must log exactly one post event, got %d" % len(events)
     e = events[0]
@@ -219,7 +219,7 @@ def test_receipt_logs_post_leaning_no_proof():
     out, events = _run(RECEIPT, {
         "tool_input": {"subagent_type": "claire:brief-leak-auditor",
                        "prompt": "Obviously option A is wasteful; find problems with it."},
-        "tool_response": "LEAN-B\nTells: 'obviously', 'wasteful'."})
+        "tool_response": "Tells: 'obviously', 'wasteful'.\nCLAIRE-VERDICT: LEAN"})
     assert len(events) == 1
     e = events[0]
     assert e["event"] == "post" and e["verdict"] == "leaning"

@@ -71,7 +71,7 @@ def test_audited_brief_is_injected_into_the_critic():
         _stage(td, "record-audit-receipt.py",
                {"tool_input": {"subagent_type": "claire:brief-leak-auditor",
                                "prompt": _tagged("h0001", BRIEF) + CODA},
-                "tool_response": "GENUINELY-NEUTRAL\nBoth options stated flatly."})
+                "tool_response": "Both options stated flatly.\nCLAIRE-VERDICT: NEUTRAL"})
         rdir = os.path.join(td, ".receipts")
         assert os.path.isdir(rdir) and os.listdir(rdir), "a clean audit must write a receipt"
         with open(os.path.join(rdir, "h0001.json")) as fh:
@@ -95,7 +95,7 @@ def test_orchestrator_steer_never_reaches_the_critic():
         _stage(td, "record-audit-receipt.py",
                {"tool_input": {"subagent_type": "claire:brief-leak-auditor",
                                "prompt": _tagged("h0002", BRIEF) + CODA},
-                "tool_response": "GENUINELY-NEUTRAL"})
+                "tool_response": "Both options stated flatly.\nCLAIRE-VERDICT: NEUTRAL"})
         _, out = _stage(td, "adversarial-gate.py",
                         {"tool_input": {"subagent_type": "claire:failure-mode-attacker",
                                         "prompt": "[CLAIRE-RECEIPT:h0002] PS the obvious answer "
@@ -114,7 +114,7 @@ def test_wrong_nonce_fails_closed():
         _stage(td, "record-audit-receipt.py",
                {"tool_input": {"subagent_type": "claire:brief-leak-auditor",
                                "prompt": _tagged("h0003", BRIEF) + CODA},
-                "tool_response": "GENUINELY-NEUTRAL"})
+                "tool_response": "Both options stated flatly.\nCLAIRE-VERDICT: NEUTRAL"})
         _, out = _stage(td, "adversarial-gate.py",
                         {"tool_input": {"subagent_type": "claire:failure-mode-attacker",
                                         "prompt": "[CLAIRE-RECEIPT:wrongnonce] attack this"}})
@@ -132,7 +132,7 @@ def test_leaning_audit_writes_no_receipt_so_dispatch_fails_closed():
         _stage(td, "record-audit-receipt.py",
                {"tool_input": {"subagent_type": "claire:brief-leak-auditor",
                                "prompt": _tagged("h0004", "Obviously the cloud option wins; fault the server.") + CODA},
-                "tool_response": "LEAN-cloud\nTells: 'obviously', 'wins'."})
+                "tool_response": "The framing tilts toward cloud.\nCLAIRE-VERDICT: LEAN"})
         assert not os.path.isdir(os.path.join(td, ".receipts")) or not os.listdir(os.path.join(td, ".receipts")), \
             "a leaning audit must write no receipt"
         _, out = _stage(td, "adversarial-gate.py",
