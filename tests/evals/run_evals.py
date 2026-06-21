@@ -116,14 +116,16 @@ def _parse_verdict(text):
         ctx = text[max(0, m.start() - 48):m.start()].lower()
         if not _DECLINED_LEAN.search(ctx):
             return "LEAN"
-    # 2. An explicit verdict label (also catches the --fake dispatcher's "VERDICT: ...").
-    m = re.search(r"verdict\b\W{0,4}\s*(?:genuinely[- ]?)?(LEAN|NEUTRAL)", text, re.IGNORECASE)
+    # 2. An explicit verdict label — tolerant of markdown/fences (e.g. "**Verdict**\n\n`LEAN-x`"),
+    #    kept in sync with the receipt hook's VERDICT_LABEL_RE (2026-06-21 fenced-verdict gap).
+    m = re.search(r"verdict\b\W{0,12}(?:genuinely[- ]?)?(LEAN|NEUTRAL)", text, re.IGNORECASE)
     if m:
         return m.group(1).upper()
-    # 3. A non-negated GENUINELY-NEUTRAL.
+    # 3. A non-negated, non-directional GENUINELY-NEUTRAL ("would move toward neutral" is not it).
     for m in _NEUTRAL_RE.finditer(text):
-        before = text[max(0, m.start() - 6):m.start()].lower()
-        if re.search(r"(?:not|n't)\s*$", before):
+        before = text[max(0, m.start() - 24):m.start()].lower()
+        if re.search(r"(?:not|n't|toward|towards|move\w*|would|closer|nearer|approach\w*|"
+                     r"shift\w*|drift\w*|tip\w*|push\w*)\b[\s\W]*$", before):
             continue
         return "NEUTRAL"
     # 4. Fallback: first standalone LEAN/NEUTRAL token.

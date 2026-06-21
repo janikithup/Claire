@@ -109,6 +109,23 @@ def test_no_decisive_verdict_fails_closed():
         assert is_clean_verdict(r) is False, "no decisive verdict must fail closed: %r" % r
 
 
+@case
+def test_fenced_faint_directional_verdict_is_lean_in_both_parsers():
+    """BUG GUARDED (live dogfood 2026-06-21): a markdown-FENCED LEAN verdict whose body calls the
+    lean 'faint' and whose recap says it 'would move me toward GENUINELY-NEUTRAL' was certified
+    CLEAN — a leaning brief got a receipt and would have been injected into the critic. Three
+    heuristic gaps aligned: the verdict-label regex did not span "**Verdict**\\n\\n`...`"; the
+    'faint' declined-context window swallowed the real LEAN token; and the directional 'would move
+    toward neutral' tripped the neutral fallback. Both parsers must read this LEAN, and must agree."""
+    s = ("That is a detectable lean toward B. It's faint-to-moderate, but per my instructions a "
+         "faint lean gets named.\n\n**Verdict**\n\n`LEAN-option-B`\n\n**The tells** ... B alone "
+         "gets a built-in reassurance.\n\nRecap: the competing read is the one thing that would "
+         "move me toward GENUINELY-NEUTRAL; but the asymmetric cost-handling is enough to name "
+         "the faint lean rather than pass it.")
+    assert is_clean_verdict(s) is False, "a fenced/faint/directional LEAN verdict must NOT be clean"
+    assert eval_parse(s) == "LEAN", "the eval parser must also read it LEAN (parsers must agree)"
+
+
 # --- 3. hook-vs-eval parser agreement ------------------------------------------
 
 @case

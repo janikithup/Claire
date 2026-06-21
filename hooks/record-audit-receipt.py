@@ -30,10 +30,13 @@ RECEIPT_SENTINEL_RE = re.compile(r"\[CLAIRE-RECEIPT:([A-Za-z0-9_-]+)\]")
 LEAN_TOKEN = re.compile(r"(?<![A-Za-z])LEAN-\w")
 NEUTRAL_RE = re.compile(r"genuinely-neutral", re.IGNORECASE)
 # Tolerant verdict-LABEL line match (mirrors tests/evals/run_evals.py): catches
-# "**Verdict** — GENUINELY-NEUTRAL", "Verdict: LEAN-x", "Verdict\nNEUTRAL", etc. — without
-# requiring a brittle literal "VERDICT:" prefix the live auditor is not contracted to emit.
+# "**Verdict** — GENUINELY-NEUTRAL", "Verdict: LEAN-x", "Verdict\nNEUTRAL", and the
+# markdown-FENCED "**Verdict**\n\n`LEAN-x`" — without requiring a brittle literal "VERDICT:"
+# prefix the live auditor is not contracted to emit. The window spans up to 12 non-word chars
+# (markdown stars, fences, colons, newlines) so a fenced verdict is not missed and mis-read by
+# the fuzzy backstops below (2026-06-21: a fenced LEAN was certified clean exactly this way).
 VERDICT_LABEL_RE = re.compile(
-    r"verdict\b\W{0,4}\s*(?:genuinely[- ]?)?(LEAN|NEUTRAL)", re.IGNORECASE)
+    r"verdict\b\W{0,12}(?:genuinely[- ]?)?(LEAN|NEUTRAL)", re.IGNORECASE)
 # Contexts in which a LEAN-<x> token is NOT an asserted verdict: the auditor discussing a
 # lean it declined, or quoting one as an example. Used by the asserted-LEAN backstop so a
 # clean pass that merely mentions a lean is not misread as leaning.
@@ -70,8 +73,12 @@ def is_clean_verdict(resp):
     if _asserted_lean(resp):
         return False
     for nm in NEUTRAL_RE.finditer(resp):
-        before = resp[max(0, nm.start() - 6):nm.start()].lower()
-        if re.search(r"(?:not|n't)\s*$", before):
+        before = resp[max(0, nm.start() - 24):nm.start()].lower()
+        # Skip a GENUINELY-NEUTRAL that is negated ("not ... neutral") OR merely directional /
+        # hypothetical ("would move me toward GENUINELY-NEUTRAL", "closer to neutral") — neither
+        # is the asserted verdict (2026-06-21: a directional mention false-cleaned a LEAN).
+        if re.search(r"(?:not|n't|toward|towards|move\w*|would|closer|nearer|approach\w*|"
+                     r"shift\w*|drift\w*|tip\w*|push\w*)\b[\s\W]*$", before):
             continue
         return True
     return False
