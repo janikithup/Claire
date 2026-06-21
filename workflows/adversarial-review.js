@@ -15,7 +15,20 @@ export const meta = {
 //   When present, one attacker runs per dimension, each capped at 3 findings, and the results merge into
 //   failure_modes (each tagged with its dimension). When absent, behavior is the current single attacker.
 
-const _args = typeof args === 'string' ? JSON.parse(args) : (args || {})
+// args may arrive as: an object {plan,...}; a JSON-stringified object; or — the friendly,
+// commonly-advertised default — the bare plan text as a string. Tolerate all three: a string
+// that is not a JSON object is taken as the plan itself, so a prose brief never crashes the run.
+let _args = {}
+if (typeof args === 'string') {
+  try {
+    const parsed = JSON.parse(args)
+    _args = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : { plan: args }
+  } catch (e) {
+    _args = { plan: args }
+  }
+} else if (args && typeof args === 'object') {
+  _args = args
+}
 const plan = _args.plan || ''
 const constraints = _args.constraints || []
 const focus = _args.focus || null
