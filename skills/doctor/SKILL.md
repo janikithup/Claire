@@ -92,13 +92,51 @@ can't hang anything."* On **yes**:
 On **no**, leave it warn-only and say so — Claire still works, the gate just always
 reminds rather than going silent.
 
+## Step 2b — Inject round-trip (does an approved brief actually REACH the critic?)
+
+Run this whenever Step 2 (or Step 2.5) produced a fresh `doctor1` receipt. Step 2 proves the
+receipt is WRITTEN; it does NOT prove the gate reads it back and INJECTS the audited brief into
+the critic — and those fail separately. A receipt can be written while the inject silently
+delivers nothing (seen 2026-06-21: after plugin versions were removed mid-session, the write
+worked but the gate returned NORECEIPT on the critic dispatch and the critic got an empty brief —
+the write-only check could not see it). So close the loop:
+
+1. With the `doctor1` receipt still fresh (2-hour TTL), dispatch **`claire:blank-slate-advisor`**
+   (namespaced) carrying the SAME id and nothing of substance — the gate overwrites the prompt
+   with the stored brief:
+
+   > [CLAIRE-RECEIPT:doctor1]
+   >
+   > Outside read requested; the audited brief will be injected by the gate.
+
+2. Confirm the inject actually fired, two independent ways:
+   - **Gate log:** `grep "PASS .*doctor1" "<plugin-root>/hooks/gate-fire.log"` returns a line.
+     The gate writes `PASS agent=... nonce=doctor1` ONLY when it found the receipt and injected the
+     stored brief; a failed read writes `NORECEIPT`. (This line is written regardless of the debug
+     switch.)
+   - **The critic's answer:** it returns a real outside read of the supplier decision (the injected
+     brief). If it instead says the brief is empty or missing, the inject did NOT deliver — exactly
+     the failure this step exists to catch.
+
+3. Record the result for the verdict:
+   - **PASS line AND a real read** → enforcement is live END TO END (written AND delivered).
+   - **Receipt written in Step 2 but NORECEIPT / empty brief here** → the inject half is broken on
+     this machine. The usual cause is plugin versions removed or changed while the app was running,
+     leaving the live hooks on a stale path. Tell the user to **restart the app and re-run
+     `/claire:doctor`**, and keep strict mode OFF until it clears.
+
 ## Step 3 — Verdict
 
 Tell the user, in plain language:
 
-- **If a fresh receipt appeared** (originally, or after enabling in Step 2.5) →
-  de-priming enforcement is live on this machine, and **strict mode
-  (`CLAIRE_GATE_STRICT=1`) is safe to enable** if they want hard blocking. Say so.
+- **If a fresh receipt appeared AND the Step 2b round-trip passed** (a `PASS` line plus a real
+  read) → de-priming enforcement is live END TO END on this machine — written *and* delivered to
+  the critic — and **strict mode (`CLAIRE_GATE_STRICT=1`) is safe to enable** if they want hard
+  blocking. Say so.
+- **If the receipt was written but the Step 2b round-trip did NOT inject** (NORECEIPT / empty
+  brief) → enforcement is half-working: receipts are recorded but not delivered, so the gate is not
+  actually de-priming critics. Tell the user to restart the app and re-run; keep strict OFF until
+  the round-trip passes.
 - **If no receipt appeared and the user declined to enable it** → Claire runs in
   **warn-only** mode: the gate reminds on every critic dispatch but never goes silent,
   and strict mode must stay OFF (it would hard-block every dispatch). That's a fine

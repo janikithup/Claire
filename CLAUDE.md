@@ -110,6 +110,11 @@ single run is **noise**. Instead:
 **Claire dogfoods herself.** Her own leak-auditor and blind-reader grade the eval
 fixtures. The tools that judge Claire's critiques are the same tools Claire ships.
 
+**Always harden the doctor.** `/claire:doctor` is Claire's live diagnostic — the test
+that runs on a real install. When a bug reaches a user that the doctor *could* have
+caught (e.g. a write-only check that missed a broken inject), add the check that would
+have caught it **before** shipping the fix. The diagnostic is a test, and tests come first.
+
 ---
 
 ## Confirming a change actually landed
