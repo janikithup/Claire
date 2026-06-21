@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-06-21
+
+### Added
+- **Say "ask Claire" and you get routed to the right place — without naming a command.** The hint that surfaces Claire used to fire only on critique-shaped phrases ("what am I missing", "attack this"), never on her name. Now naming her — "ask Claire", "run it by Claire", "Claire's take", "what would Claire say" — routes you to `/claire:challenge`, the entry point that picks the right critic for what you have *and* leak-checks your brief before any critic sees it. Why route there rather than straight to a critic: the brief-stripping that makes Claire Claire lives in that step, so reaching for a critic directly would skip it. Deliberately tight: it does **not** fire on the bare word "claire" (which is everywhere in ordinary work — "fix the claire gate", "Claire's README"), only on phrases that actually ask for her read; a test pins eight such mentions as silent, including the "Claire's read"/"Claire's README" trap. (Thanks to the maintainer for the catch that "ask Claire" was free-guessing between a skill, a bare critic, and a workflow — and that a wrong guess skips the de-priming.)
+
 ## [0.10.0] - 2026-06-21
 
 ### Changed
