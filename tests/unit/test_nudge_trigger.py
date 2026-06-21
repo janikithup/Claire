@@ -69,6 +69,17 @@ def fires_auto(prompt, claire_auto="1"):
     return _context(run_nudge(prompt, claire_auto=claire_auto)).startswith("[claire:auto]")
 
 
+def fires_route(prompt, claire_auto=None):
+    """True iff the EXPLICIT-ASK routing message fired ([claire:route]).
+
+    This is the branch for when the user NAMES Claire ("ask Claire", "Claire's
+    take") — distinct from the generic discoverability nudge, which surfaces the
+    toolkit when the user did NOT name it. Route firmly to /claire:challenge (the
+    router that picks the right critic AND leak-checks the brief) rather than letting
+    a bare `claire:` subagent dispatch skip the de-priming."""
+    return _context(run_nudge(prompt, claire_auto=claire_auto)).startswith("[claire:route]")
+
+
 # Prompts that MUST fire — genuine requests for an outside/critical read.
 SHOULD_FIRE = [
     "What am I missing in this rollout plan?",
@@ -224,6 +235,101 @@ def test_auto_flag_falsey_values_are_off():
     for off in ("", "0", "false", "False"):
         assert not fires_auto(p, claire_auto=off), \
             "CLAIRE_AUTO=%r must be OFF, but auto-mode armed" % off
+
+
+# ---------------------------------------------------------------------------
+# EXPLICIT-ASK routing — when the user NAMES Claire.
+# "ask Claire" is the maintainer's shorthand for "get Claire's read" — it does NOT
+# mean "invoke the Skill tool specifically". The right entry is still the router
+# skill /claire:challenge, because the leak-check that strips the expected answer
+# lives there; a bare claire: subagent/workflow dispatch would skip it. So a hook
+# fires on tight intent phrases that name Claire and routes to the router.
+#
+# Same "tight by design" rule as the discoverability trigger, but SHARPER here:
+# in the Claire repo itself the bare word "claire" is everywhere (file names,
+# changelog, "fix the claire gate"). Firing on bare "claire" would be pure noise,
+# so the trigger is full intent phrases only. The negative half below — dev-session
+# mentions of "claire" that MUST stay silent — is what protects this.
+# ---------------------------------------------------------------------------
+
+# Prompts that MUST route — the user is asking for Claire's read.
+ASK_SHOULD_ROUTE = [
+    "Ask Claire what she thinks of this rollout plan.",
+    "Can you run this by Claire before I commit?",
+    "Let's get Claire's take on the rollout.",
+    "What would Claire say about shipping on Friday?",
+    "Have Claire look at my argument for me.",
+    "I want Claire's view on this decision.",
+    "What's Claire's opinion of the new schema?",
+    "Run it by Claire and see what breaks.",
+    "Check with Claire on this before we move.",
+    "I'd like Claire's read on the migration risk.",
+]
+
+# Prompts that MUST NOT route — ordinary dev work that mentions "claire". These are
+# exactly the false fires a bare "contains 'claire'" matcher would produce in this
+# repo, so each one locks a specific tell out of the trigger set.
+ASK_SHOULD_NOT_ROUTE = [
+    "Fix the Claire gate hook.",
+    "Update Claire's README with the new install path.",   # 'claire's read'... guarded by README
+    "Run the Claire test suite.",
+    "What does the Claire doctor check on install?",
+    "Bump Claire to v0.11 in the changelog.",
+    "Where do Claire's agents get loaded from?",
+    "Explain how Claire's leak-check works.",
+    "Add a regression test for the Claire nudge hook.",
+]
+
+
+@case
+def test_explicit_ask_routes():
+    """BUG GUARDED: the user names Claire ('ask Claire', 'Claire's take') but nothing
+    routes them, so the agent free-guesses between a skill, a bare subagent, and a
+    workflow — and a wrong guess (bare subagent) skips the leak-check, defeating the
+    de-priming. Each of these must inject the [claire:route] message."""
+    missed = [p for p in ASK_SHOULD_ROUTE if not fires_route(p)]
+    assert not missed, "these explicit asks-for-Claire FAILED to route:\n  - " + \
+        "\n  - ".join(missed)
+
+
+@case
+def test_dev_mentions_of_claire_stay_silent():
+    """BUG GUARDED: the routing trigger is loosened to bare 'claire' (or a tell like
+    'claire's read' that collides with 'claire's README'), so ordinary work IN THE
+    CLAIRE REPO fires the route message on every other prompt — the noise failure the
+    'tight by design' discipline exists to prevent."""
+    wrong = [p for p in ASK_SHOULD_NOT_ROUTE if fires_route(p)]
+    assert not wrong, "these ordinary dev prompts wrongly routed (noise):\n  - " + \
+        "\n  - ".join(wrong)
+
+
+@case
+def test_route_supersedes_discoverability_when_both_match():
+    """BUG GUARDED: a prompt that BOTH names Claire and is critique-shaped ('ask Claire
+    what I'm missing') surfaces the weaker generic discoverability nudge instead of the
+    firmer explicit route — a branch-order regression."""
+    p = "Ask Claire what I'm missing in this plan."
+    assert fires_route(p), "explicit ask must route when it also matches a critique trigger"
+    assert not fires(p), "the generic discoverability nudge must be suppressed once the route fires"
+
+
+@case
+def test_route_silent_on_non_claire_critique():
+    """BUG GUARDED: the route message swallows generic critique prompts that do NOT
+    name Claire — those must still get the discoverability nudge, not the route."""
+    leaked = [p for p in SHOULD_FIRE if fires_route(p)]
+    assert not leaked, "route message wrongly fired on critique prompts that don't name Claire:\n  - " + \
+        "\n  - ".join(leaked)
+
+
+@case
+def test_route_message_points_at_challenge():
+    """BUG GUARDED: the route fires but names the wrong entry point (a bare subagent,
+    or nothing actionable), so it doesn't actually route. The message must name
+    /claire:challenge — the router where the leak-check lives."""
+    ctx = _context(run_nudge("Ask Claire to look at this plan."))
+    assert ctx.startswith("[claire:route]"), "explicit ask must emit the route message"
+    assert "/claire:challenge" in ctx, "route message must point at /claire:challenge"
 
 
 if __name__ == "__main__":

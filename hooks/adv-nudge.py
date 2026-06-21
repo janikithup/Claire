@@ -23,6 +23,22 @@ TRIGGERS = (
     "change my mind", "am i wrong about",
 )
 
+# Explicit ask-for-Claire. The user NAMES Claire ("ask Claire", "Claire's take") —
+# their shorthand for "get Claire's read", which does NOT mean "invoke the Skill tool
+# specifically". The right entry is still the router skill /claire:challenge, because
+# the leak-check that strips the expected answer lives there; a bare claire: subagent
+# or workflow dispatch would skip the de-priming. TIGHTER than the critique triggers:
+# in the Claire repo the bare word "claire" is everywhere ("fix the claire gate",
+# "claire's README"), so the trigger is full intent phrases only — never bare "claire".
+# 'claire's read on' (not bare 'claire's read') is deliberate: 'claire's read' is a
+# substring of 'claire's README'. FAIL-OPEN like the rest of the hook.
+ASK_TRIGGERS = (
+    "ask claire", "run it by claire", "run this by claire", "run by claire",
+    "check with claire", "have claire look", "have claire check", "have claire read",
+    "what does claire think", "what would claire say", "what does claire make of",
+    "claire's take", "claire's view", "claire's opinion", "claire's read on",
+)
+
 # CLAIRE_AUTO autonomous-mode arming. Tight, multi-word kickoff phrases that signal
 # the start of an autonomous / AFK run (mirrors the autoloop skill's trigger lexicon).
 # Same "tight by design" rule as TRIGGERS: a loose match would bleed the standing
@@ -50,6 +66,17 @@ AUTO_MSG = (
     "cycles), do not proceed — park the run on that judgement call for the user, with the "
     "lean named. Claire critiques; she never approves — her read informs your call, it "
     "does not bless it. Mechanical steps with no judgement call fire nothing."
+)
+
+# The message injected when the user explicitly asks for Claire. Routes to the router
+# skill and names WHY the skill rather than a bare subagent: the leak-check lives there.
+ROUTE_MSG = (
+    "[claire:route] You're asking for Claire's read. Send it through `/claire:challenge` "
+    "(or `/claire:blank` for a cold read on a fork with no artifact) — the skill picks the "
+    "right critic for what you have (plan-attacker, outside view, actor role-play, "
+    "source-vs-claim check, or a workflow) and strips your expected answer from the brief "
+    "before any critic sees it. Reaching for a `claire:` subagent or workflow directly "
+    "skips that leak-check, so route through the skill, not around it."
 )
 
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nudge-fire.log")
@@ -85,6 +112,16 @@ def main():
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit", "additionalContext": AUTO_MSG}}))
             return
+
+    # Explicit ask for Claire — the user named her. Route firmly to the router skill,
+    # ahead of (and superseding) the generic discoverability nudge. Tight intent phrases
+    # only; never bare "claire".
+    rhit = next((t for t in ASK_TRIGGERS if t in pl), None)
+    if rhit:
+        log("ROUTE matched=%r" % rhit)
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit", "additionalContext": ROUTE_MSG}}))
+        return
 
     hit = next((t for t in TRIGGERS if t in pl), None)
     if not hit:
