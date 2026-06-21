@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-06-21
+
+### Changed
+- **Claire reads her reviewer's verdict from a fixed codename line, instead of guessing it from prose.** The leak-auditor now ends every audit with one machine-readable line — `CLAIRE-VERDICT: NEUTRAL` or `CLAIRE-VERDICT: LEAN` — and Claire reads only that line to decide whether a brief is cleared. Before, she parsed the verdict out of the auditor's free-form English, which is inherently unreliable: model prose varies every time, so each new phrasing was a fresh chance to mis-read (a markdown-fenced verdict, a "faint lean" qualifier, "closer to neutral", even the letters "tip" inside "multiple" could trip the parser). A pre-release review found that class of bug had crept back in. Defining the format we read — rather than reverse-engineering random output — removes the whole class: the reader is now a few deterministic, fully-tested lines, and if the codename is ever missing it fails **closed** (no receipt, the gate reminds), so a missing or garbled verdict can only over-remind on a clean brief, never wave a leaning one through. (Thanks to the maintainer for the call to stop parsing prose.)
+
+### Added
+- **`/claire:doctor` now tests the full round-trip, not just half of it.** Its live self-test used to confirm only that a clean audit *writes* a receipt; it now also dispatches a critic and confirms the gate *reads that receipt back and delivers* the audited brief to the critic — catching a broken hand-off (e.g. after duplicate plugin copies are removed mid-session) that the write-only check could not see. The rulebook now carries the standing principle: when a bug reaches a user that the doctor could have caught, harden the doctor before shipping the fix.
+
+### Fixed
+- **`/claire:adversarial-review` no longer crashes when handed a plain-text plan.** Its own usage hint says to pass the plan as a bare string, but the workflow then tried to parse that string as JSON and died at zero agents. A plain-text plan now just works (objects and JSON-stringified objects still work too).
+
+### Internal
+- A schema-contract test pins the de-priming gate's injected dispatch against the real Agent-tool input schema, catching a dropped-required-field regression (the class behind 0.8.2) at write time rather than on a broken release.
+
 ## [0.9.0] - 2026-06-21
 
 ### Added
