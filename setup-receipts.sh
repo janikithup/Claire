@@ -35,7 +35,9 @@ fi
 case "$PLUGIN_ROOT" in
   */plugins/cache/*)
     GLOB="$(dirname "$PLUGIN_ROOT")/*/hooks/record-audit-receipt.py"
-    CMD="for f in $GLOB; do [ -f \"\$f\" ] && python3 \"\$f\"; done"
+    # trailing `; true`: exit 0 even when the cache is cleared and the glob matches nothing,
+    # so a missing script is a genuine no-op rather than a spurious exit-1 every turn-end.
+    CMD="for f in $GLOB; do [ -f \"\$f\" ] && python3 \"\$f\"; done; true"
     ;;
   *)
     CMD="[ -f $HOOK ] && python3 $HOOK || true"

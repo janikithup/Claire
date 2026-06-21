@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-06-21
+
+### Added
+- **A built-in feedback channel — file a Claire issue from any project, without it scattering into the repo you're in.** When a Claire skill or agent falls short while you're working in some *other* project, its report used to land in whatever repo happened to be open (sometimes a public one), because the assistant's file-writing is sandboxed to the current folder and can't reach Claire's central queue. Now the assistant **emits a marker** in its reply and a background step that runs with your own file access — outside that sandbox — files the report to one private folder (`~/.claude/claire/issues/`), reachable from anywhere.
+  - **Use it:** `/claire:report <what happened>` files a note on demand. (A later release adds automatic filing when a Claire dispatch itself errors.)
+  - **It files a real report, not a mention.** The marker counts only when it is the final, left-margin, unfenced block of the reply — so the constant discussion and examples of the marker format (especially while developing Claire) are never mistaken for a filed report.
+  - **Private by construction:** reports are written only to the fixed private queue (never a project-derived path); the queue carries its own ignore guard so it can't ride into a tracked repo; and the filing step strips any environment override that could redirect it.
+  - **Diagnosable, never silent:** whenever a marker is present, the filing step records its decision (filed, or exactly why not) to `~/.claude/claire/feedback-fire.log`, so a dropped report is visible rather than a mystery. Quiet on ordinary turns.
+  - **Set-up:** `setup-feedback.sh` wires the filing step into your settings once (like `setup-receipts.sh`) — safe to re-run, uninstall-clean.
+  - **Verified:** built test-first, then put through a hand-written breaker harness and a fresh-context adversarial re-gate that caught and fixed two ship-blockers — a quadratic-regex turn-stall on repeated markers, and a no-intent-gate spam vector — plus a privacy hole (an environment override that could redirect the write) before release. Claire's own de-primed critic reviewed the design.
+
 ## [0.8.2] - 2026-06-21
 
 ### Fixed

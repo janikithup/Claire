@@ -60,6 +60,12 @@ accident.
   work with no surrounding context and get back the read of someone seeing it
   fresh, with no stake in the prior answer.
 
+- **`/claire:report`** — File a feedback note when a Claire skill or agent falls
+  short — even from another project. Instead of a report scattering into whatever
+  repo you have open, Claire emits a marker that a background step files to one
+  private folder (`~/.claude/claire/issues/`), reachable from anywhere. Wire it in
+  once with `setup-feedback.sh` (or `/claire:doctor`).
+
 - **`/claire:doctor`** — Health- and conflict-check this install. Verifies
   dependencies and integrity, flags duplicate installs and agent-name clashes with
   your current workspace, and runs a live self-test confirming the de-priming
