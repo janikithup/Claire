@@ -60,17 +60,12 @@ accident.
   work with no surrounding context and get back the read of someone seeing it
   fresh, with no stake in the prior answer.
 
-- **`/claire:report`** — File a feedback note when a Claire skill or agent falls
-  short — even from another project. Instead of a report scattering into whatever
-  repo you have open, Claire emits a marker that a background step files to one
-  private folder (`~/.claude/claire/issues/`), reachable from anywhere. Wire it in
-  once with `setup-feedback.sh` (or `/claire:doctor`).
-
 - **`/claire:doctor`** — Health- and conflict-check this install. Verifies
   dependencies and integrity, flags duplicate installs and agent-name clashes with
   your current workspace, and runs a live self-test confirming the de-priming
-  enforcement is actually firing here (so you know whether strict mode is safe to
-  turn on). Run it after installing or updating.
+  enforcement is actually firing here (the gate blocks by default, so this tells you
+  whether enforcement works end-to-end or a broken install needs the
+  `CLAIRE_GATE_STRICT=0` escape hatch). Run it after installing or updating.
 
 ## How she differs
 
@@ -89,12 +84,15 @@ receipt written when the audit passes, not by the assistant claiming it did the
 step. If a brief never passes the auditor in two tries, the assistant is told to
 stop and show you the lean it keeps finding rather than push on regardless.
 
-By default the gate *warns* (it never blocks your work on a public install). If
-you want it to hard-stop a critic that skipped the audit, set the environment
-variable `CLAIRE_GATE_STRICT=1` on that machine — but first run a real
-`/claire:challenge` once and confirm the gate goes quiet on the genuine dispatch
-(i.e. receipts are being written on your setup), so strict mode blocks only true
-skips, not a payload-shape quirk.
+By default the gate *blocks* a critic dispatch that skipped or failed the audit —
+it hard-stops rather than waving the dispatch through with a warning. This is safe
+to default on because the gate recognises a Claire dispatch only by exact identity
+(a `claire:`-named critic, or a real receipt marker), never by guessing from
+keywords, so a block can only ever land on a genuine Claire critic — never on
+unrelated work. If a broken install ever locks you out (receipts not being written,
+so every dispatch is denied), set `CLAIRE_GATE_STRICT=0` on that machine to soften
+the gate back to advisory warnings while you fix it — `/claire:doctor` diagnoses
+exactly that case.
 
 **Running Claire during autonomous work.** By default Claire is invoke-only — nothing
 fires until you ask. For long unattended / AFK runs where no one is there to invoke her,

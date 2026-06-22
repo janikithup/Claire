@@ -37,6 +37,32 @@ upstream. See `docs/design-principles.md`.
 
 ---
 
+## How Claire works — the map
+
+This file is the build rulebook, not the manual. Claire's *functionality* is
+documented in `docs/`, and this map is the index: when you need to know how a piece
+works, follow the pointer rather than expecting it spelled out here. (Keeping mechanism
+in `docs/` and only an index here is deliberate — it stops this file drifting back into
+a pile of detail that no longer reads as rules.)
+
+- **De-priming enforcement** — the gate, the receipt / prompt-injection handshake, the
+  two failure states, block-by-default, and the escape hatch → `docs/enforcement.md`.
+- **Modes** (`CLAIRE_DEBUG`, `CLAIRE_GATE_STRICT`, `CLAIRE_AUTO`) → `docs/enforcement.md`.
+- **The critics, and how a request is routed to one** (`/claire:challenge`,
+  `/claire:blank`, and the agent roster) → the skills in `skills/`, with the design
+  rationale in `docs/design-principles.md`.
+- **Presentation — translate the critic, never outvote her** → the spine above; detail
+  in `docs/design-principles.md`.
+- **Why a cold, blind read beats a context-rich one** → `docs/blank-slate-finding.md`.
+- **The enforcement design history** (what replaced the old fingerprint gate) →
+  `docs/injection-redesign.md`.
+- **Release mechanics** → `docs/releasing.md`.
+
+When you build a new capability, document it in `docs/` and add a one-line pointer here
+— that is how this file stays an index instead of a manual.
+
+---
+
 ## How to work
 
 **Act by default; ask almost never.** Before asking the maintainer anything, check
@@ -181,25 +207,13 @@ never for their material:
 
 ## Releasing
 
-- **One user-visible change per release.** Don't bundle.
-- Version with **semver** (a breaking change bumps the first number, a new feature
-  the second, a fix the third).
-- The **version bump is the last step** — only after the tests pass, the eval
-  pass-rate holds, and the change is confirmed landed. Never bump first.
-- **Publish to BOTH repos — run `./release.sh`.** A release touches *two* repos,
-  and forgetting the second strands every user: this plugin repo (tag `vX.Y.Z`,
-  GitHub Release) **and** the separate `claire-marketplace` repo (the `version`
-  field in its `marketplace.json`). The Desktop panel shows users that marketplace
-  `version` field as "latest" and only offers an update when it climbs — the plugin
-  `source` is a bare repo URL that tracks `main` HEAD for *code*, but the version
-  number users *see* comes only from the marketplace manifest. Bump the plugin
-  without bumping the marketplace and everyone is silently stuck on the old version
-  (exactly what happened to 0.6.1→0.7.1 — four releases no one could install).
-  `./release.sh` does tag + push + GitHub Release + marketplace bump + push + a
-  post-publish remote check in one step; `./release.sh --check` verifies all four
-  version sources (plugin.json, marketplace.json, latest tag, CHANGELOG) agree. Run
-  `./release.sh --check` first to confirm the at-rest state, then `./release.sh` to
-  publish — it assumes plugin.json is **already bumped and committed** (the bump is
-  the feature's last commit, not the script's job). Run the script — don't do these
-  by hand. (The cross-repo check can't live in the unit suite: the sibling
-  marketplace repo isn't present in CI.)
+- **One user-visible change per release** — don't bundle.
+- **The version bump is the last step**, never the first — only after the tests pass,
+  the eval pass-rate holds, and the change is confirmed landed.
+- **A release touches TWO repos** (this plugin *and* `claire-marketplace`). Publish by
+  running `./release.sh`, never by hand — forgetting the marketplace bump strands every
+  user on the old version, because the version users *see* comes only from the
+  marketplace manifest.
+
+Full mechanics, the semver rule, and why the two-repo step is load-bearing →
+`docs/releasing.md`.

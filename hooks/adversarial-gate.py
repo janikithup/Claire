@@ -20,12 +20,17 @@ genuine receipt fails closed.
 Decision tree:
   - not a de-priming dispatch                      -> silent pass
   - carries a nonce with a fresh receipt           -> INJECT the audited brief (allow)
-  - carries a nonce but NO fresh receipt           -> NORECEIPT warning (fail closed)
-  - de-priming dispatch with no nonce at all       -> REMIND (run the leak-audit)
+  - carries a nonce but NO fresh receipt           -> NORECEIPT (deny by default; warn if soft)
+  - de-priming dispatch with no nonce at all       -> REMIND  (deny by default; warn if soft)
 
-Set CLAIRE_GATE_STRICT=1 to make the two failure states BLOCK (PreToolUse deny)
-instead of warn — recommended on your own machines, off by default so a public
-install can never hard-block on a gate quirk.
+The two failure states BLOCK by default (PreToolUse deny): a skipped or failed
+de-priming hard-stops. This is safe to default on because detection is EXACT IDENTITY
+— a claire:-namespaced critic, or a [CLAIRE-RECEIPT] marker — so a block can only ever
+land on a genuine Claire dispatch, never on unrelated work. Set CLAIRE_GATE_STRICT=0
+(or false) to soften both states to an advisory warning — the escape hatch for an
+install that ever hits a false block. This is DISTINCT from the fail-open net above:
+an ERROR inside the gate still allows silently; only a correctly-detected skipped
+de-priming blocks.
 """
 import sys, os, json, time, re, datetime
 
@@ -35,18 +40,16 @@ ADVERSARIAL_AGENTS = {
 }
 # brief-leak-auditor is DELIBERATELY NOT listed: it is the de-priming CHECKER, not an
 # adversary that needs a de-primed brief. Gating it would circularly demand a receipt on
-# the very tool that earns receipts. The name check below is authoritative over the phrase net.
-
-# Secondary net for the rare case where the agent-type field does not carry the custom
-# agent's name. REMIND-only: it carries no nonce, so it can never inject — only nudge.
-ADVERSARIAL_PHRASES = (
-    "devil's advocate", "steel-man", "steelman", "de-prime", "deprime",
-    "blank-slate advisor",
-)
-# Word boundaries so "deprime" does not fire inside "deprimed".
-ADVERSARIAL_PHRASE_RE = re.compile(
-    r"(?<![a-z])(?:" + "|".join(re.escape(p) for p in ADVERSARIAL_PHRASES) + r")(?![a-z])"
-)
+# the very tool that earns receipts.
+#
+# Detection is EXACT IDENTITY ONLY — a claire:-namespaced adversary agent (by name), or a
+# [CLAIRE-RECEIPT] marker. There is deliberately NO keyword/phrase matching on the prompt:
+# a guesser that fired on words like "devil's advocate" both false-positived on unrelated
+# work (the reason the gate could not safely block by default) and false-negatived on real
+# critiques that missed the magic words. So the gate guards Claire's OWN critics by name,
+# not the act of seeking criticism through any agent. (Keyword net removed in >=0.12.0 —
+# "no more keyword logic"; the wider "route any outside-read request" gap is a separate
+# concern, not this hook's job.)
 
 # The de-priming handshake marker. The orchestrator puts the SAME nonce on the audit and
 # the critic dispatch; the receipt is keyed by it. Charset is filename-safe by construction,
@@ -58,7 +61,11 @@ LOG = os.path.join(HERE, "gate-fire.log")
 RECEIPT_DIR = os.path.join(HERE, ".receipts")
 TTL_SECONDS = 2 * 60 * 60
 
-STRICT = os.environ.get("CLAIRE_GATE_STRICT", "").strip() not in ("", "0", "false", "False")
+# Block-by-default: a skipped/failed de-priming denies (PreToolUse). CLAIRE_GATE_STRICT=0
+# (or false) softens both failure states to advisory warnings — the escape hatch. Unset or
+# any other value => block. (Detection is exact-identity only, so a default block can never
+# land on unrelated work — see the ADVERSARIAL_AGENTS note above.)
+STRICT = os.environ.get("CLAIRE_GATE_STRICT", "").strip() not in ("0", "false", "False")
 DEBUG = os.environ.get("CLAIRE_DEBUG", "").strip() not in ("", "0", "false", "False")
 
 # Event log (0.6.0) — OBSERVABILITY only; never affects the decision. Import-guarded so a
@@ -174,7 +181,6 @@ def main():
     atype = (ti.get("subagent_type") or ti.get("agentType") or ti.get("agent_type")
              or data.get("subagent_type") or "")
     prompt = ti.get("prompt") or ti.get("description") or ""
-    pl = prompt.lower()
     atype_bare = str(atype).strip().split(":")[-1]
     atype_raw = str(atype).strip()
 
@@ -186,8 +192,7 @@ def main():
     # Only Claire's OWN adversarial agents (namespaced) count by type; a bare same-named
     # workspace agent is someone else's and is left alone.
     is_claire_adv = atype_bare in ADVERSARIAL_AGENTS and atype_raw.startswith("claire:")
-    is_phrase = bool(ADVERSARIAL_PHRASE_RE.search(pl))
-    is_depriming = is_claire_adv or (nonce is not None) or is_phrase
+    is_depriming = is_claire_adv or (nonce is not None)
     if not is_depriming:
         return  # not a Claire de-priming dispatch — silent pass
 

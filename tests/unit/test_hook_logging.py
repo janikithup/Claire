@@ -81,10 +81,12 @@ def _run(script_path, payload, receipts=None, env=None, with_logger=True):
 def test_gate_logs_pre_event_on_remind():
     """BUG GUARDED: the gate takes a decision but records nothing, so the event log can
     never show the gate-decision mix. An adversarial dispatch with no tag must log exactly
-    one 'pre' event naming the REMIND decision, the agent slot, and the dispatch id."""
+    one 'pre' event naming the REMIND decision, the agent slot, and the dispatch id. Run under
+    the soft escape hatch (CLAIRE_GATE_STRICT=0) so the decision is REMIND, not the default BLOCK."""
     out, events = _run(GATE, {"tool_input": {"subagent_type": "claire:failure-mode-attacker",
                                              "prompt": "Attack this rollout plan."},
-                              "tool_use_id": "tu_abc123"})
+                              "tool_use_id": "tu_abc123"},
+                       env={"CLAIRE_GATE_STRICT": "0"})
     assert len(events) == 1, "gate must log exactly one pre event, got %d" % len(events)
     e = events[0]
     assert e["event"] == "pre", "gate event must be 'pre'"
@@ -142,9 +144,14 @@ def test_gate_logging_absent_logger_is_fail_open():
     out, events = _run(GATE, {"tool_input": {"subagent_type": "claire:failure-mode-attacker",
                                              "prompt": "Attack this plan."}},
                        with_logger=False)
-    assert out.strip(), "gate must still warn even with the logger absent"
-    obj = json.loads(out)
-    assert "CLAIRE GATE" in obj["hookSpecificOutput"]["additionalContext"]
+    assert out.strip(), "gate must still act even with the logger absent"
+    hs = json.loads(out)["hookSpecificOutput"]
+    # Default is BLOCK (deny) → the message lands in permissionDecisionReason; soft mode would
+    # use additionalContext. Accept whichever channel carries it, so the test pins the no-crash
+    # guarantee without coupling to the mode.
+    msg = hs.get("permissionDecisionReason") or hs.get("additionalContext") or ""
+    assert hs.get("permissionDecision") == "deny", "default must DENY even with the logger absent"
+    assert "CLAIRE GATE" in msg
     assert events == [], "no logger -> no events, but no crash"
 
 

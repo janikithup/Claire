@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-06-22
+
+### Changed
+- **The de-priming gate now blocks by default instead of warning.** When a critic is dispatched without a clean leak-audit behind it, the gate now **denies** the dispatch rather than emitting a warning the assistant could read and walk straight past. Reports kept showing exactly that walk-past — an outside-read or adversary dispatched *before* the de-priming step, with the warning treated as licence to skip — which is the one thing the gate exists to stop. Blocking by default closes it. This is safe to default on because the gate recognises a Claire dispatch only by **exact identity** (one of Claire's own `claire:`-named critics, or a real `[CLAIRE-RECEIPT]` marker), so a block can only ever land on a genuine Claire dispatch, never on unrelated work. If a broken install ever locks you out — receipts not being written, so every dispatch is denied — set `CLAIRE_GATE_STRICT=0` to soften the gate back to advisory while you fix it; `/claire:doctor` diagnoses and now reports that case. (Thanks to the maintainer for the call that warn-by-default had become a safety net the assistant kept leaning on.)
+- **Detection no longer guesses from keywords.** The gate used to also flag a dispatch whose *prompt* contained phrases like "devil's advocate" or "steel-man". That guesser both false-fired on unrelated work (the reason the gate couldn't safely block by default) and missed real critiques that didn't use the magic words. It's gone — the gate guards Claire's own named critics, not the act of seeking criticism through any agent. (Thanks to the maintainer for "the ultimate goal is no more keyword logic.")
+
+### Removed
+- **`/claire:report` and the automatic feedback channel are out of the plugin.** Both filed to a *local* `~/.claude/claire/issues/` queue that only the person developing Claire ever reads — for everyone else, reports just piled up on disk with nothing to collect them. A feedback channel that can't carry feedback back isn't worth the command-menu space, so it's removed (the skill, both hooks, `setup-feedback.sh`, and their tests). Filing a Claire issue still works the direct way — write the note straight to the queue — and a one-tap shortcut, if wanted, belongs as a personal skill outside the shipped plugin. (Thanks to the maintainer for spotting it had no real use case.)
+
+### Internal
+- **`CLAUDE.md` is now a router, not a manual.** The build rulebook had started absorbing *mechanism* (how the gate works, the release procedure) inline. It now keeps the per-session build rules written out and routes functionality to `docs/` through a short index — the gate and the modes to `docs/enforcement.md`, release mechanics to `docs/releasing.md` — so the always-loaded file stays lean while every capability stays discoverable from it. A test pins the index against `docs/` both ways, so a pointer can't outlive its doc and a new doc can't go unlinked. (Thanks to the maintainer for "set the md up as a router to the docs.")
+
 ## [0.11.0] - 2026-06-21
 
 ### Added

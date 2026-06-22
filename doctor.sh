@@ -67,8 +67,10 @@ echo ""
 echo "Receipt enforcement (de-priming gate teeth)"
 # On the Claude Desktop app, a plugin's PostToolUse hook does NOT fire (its PreToolUse
 # hook does). Claire's receipt writer is PostToolUse, so unless it is ALSO registered in
-# the user settings file it never runs: no receipt is written, the gate can never go
-# silent, and de-priming degrades to an unconditional nag. setup-receipts.sh wires it in.
+# the user settings file it never runs: no receipt is ever written. Since >=0.12.0 the gate
+# BLOCKS by default, so "no receipts" is no longer a harmless nag — it means every audited
+# critic dispatch is DENIED (Claire locked out) until the writer is wired in OR the block is
+# softened with CLAIRE_GATE_STRICT=0. setup-receipts.sh wires it in.
 SETTINGS="$HOME/.claude/settings.json"
 reg="$(python3 - "$SETTINGS" 2>/dev/null <<'PYEOF'
 import json, os, re, sys
@@ -97,7 +99,17 @@ PYEOF
 case "$reg" in
   ok)    ok "receipt writer registered in settings.json — enforcement can fire on this machine" ;;
   stale) warn "receipt writer is registered in settings.json but points at a path that no longer exists — did you switch install methods (clone <-> marketplace)? Re-point it:  bash \"$PLUGIN_ROOT/setup-receipts.sh\"  (or run /claire:doctor, which offers to)." ;;
-  *)     warn "receipt writer NOT registered in settings.json — on Claude Desktop the plugin's PostToolUse hook does not fire, so NO receipt is ever written and the gate becomes an unconditional nag. Run:  bash \"$PLUGIN_ROOT/setup-receipts.sh\"  (or run /claire:doctor, which offers to do it). The live test below confirms." ;;
+  *)     warn "receipt writer NOT registered in settings.json — on Claude Desktop the plugin's PostToolUse hook does not fire, so NO receipt is ever written. With block-by-default (>=0.12.0) that DENIES every audited critic dispatch — Claire is locked out, not merely nagging. Fix it:  bash \"$PLUGIN_ROOT/setup-receipts.sh\"  (or run /claire:doctor, which offers to). Immediate stopgap: export CLAIRE_GATE_STRICT=0 to soften the gate to advisory so Claire is usable while you wire the writer in. The live test below confirms." ;;
+esac
+echo ""
+
+echo "Block mode (CLAIRE_GATE_STRICT)"
+strictv="$(printf '%s' "${CLAIRE_GATE_STRICT:-}" | tr -d '[:space:]')"
+case "$strictv" in
+  0|false|False)
+    warn "SOFTENED — CLAIRE_GATE_STRICT=$strictv, so a skipped/failed de-priming only WARNS and the dispatch proceeds. This is the escape hatch for a broken install; for real enforcement leave it unset (block-by-default)." ;;
+  *)
+    ok "block-by-default — a skipped or failed de-priming is DENIED (the default since >=0.12.0). Detection is exact-identity only (a claire: critic or a receipt marker), so a block never lands on unrelated work. Set CLAIRE_GATE_STRICT=0 only if a broken install is locking you out." ;;
 esac
 echo ""
 
@@ -107,7 +119,7 @@ case "$auto" in
   ""|0|false|False)
     ok "off — Claire is invoke-only (the interactive default). Export CLAIRE_AUTO=1 for an unattended/AFK run to have her fire on every judgement call (see README, 'Running Claire during autonomous work')." ;;
   *)
-    ok "ARMED — on an autonomous-run prompt, Claire's per-judgement-call standing instruction is injected for the run. Leave CLAIRE_AUTO unset for interactive work. Pair with CLAIRE_GATE_STRICT=1 so a skipped audit hard-stops rather than warns." ;;
+    ok "ARMED — on an autonomous-run prompt, Claire's per-judgement-call standing instruction is injected for the run. Leave CLAIRE_AUTO unset for interactive work. A skipped audit already hard-stops (block-by-default since >=0.12.0); no extra flag needed." ;;
 esac
 echo ""
 

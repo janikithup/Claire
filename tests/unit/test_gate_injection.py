@@ -138,42 +138,58 @@ def test_sentinel_fires_on_any_agent_type():
 # --- no genuine receipt: fail closed --------------------------------------------
 
 @case
-def test_sentinel_without_receipt_fails_closed():
+def test_sentinel_without_receipt_blocks_by_default():
     """BUG GUARDED: a dispatch quotes a nonce for which no receipt exists (audit never ran,
-    or a forged/typo'd nonce). With nothing to inject, the gate must NOT pass silently — it
-    must warn (NORECEIPT)."""
+    or a forged/typo'd nonce). With nothing to inject, the gate must NOT pass — and since
+    >=0.12.0 the default is to BLOCK (deny), not merely warn. Detection here is exact (the
+    nonce marker), so a default block can never hit unrelated work."""
     out, log = run_gate(_dispatch("claire:failure-mode-attacker",
                                   "[CLAIRE-RECEIPT:doesnotexist] attack this plan"))
-    assert out.strip(), "no-receipt must warn, not pass"
     hs = _hook_out(out)
+    assert hs.get("permissionDecision") == "deny", "no-receipt must DENY by default, not warn"
     assert "updatedInput" not in hs, "must not inject when no receipt exists"
-    assert "additionalContext" in hs
-    assert "NORECEIPT" in log and "PASS" not in log
+    assert "NORECEIPT" in log and "BLOCK" in log and "PASS" not in log
 
 
 @case
-def test_expired_receipt_fails_closed():
+def test_expired_receipt_blocks_by_default():
     """BUG GUARDED: a receipt older than the TTL is honoured, so a brief audited hours ago
-    and since edited slips through. A stale receipt must be ignored -> NORECEIPT."""
+    and since edited slips through. A stale receipt must be ignored -> deny by default."""
     brief = "Situation: a stale brief. Outside read?"
     out, log = run_gate(
         _dispatch("claire:failure-mode-attacker", "[CLAIRE-RECEIPT:stale001] x"),
         receipts=[("stale001", brief, 3 * 60 * 60)])  # 3h old, TTL 2h
     hs = _hook_out(out)
+    assert hs.get("permissionDecision") == "deny", "a stale receipt must DENY by default"
     assert "updatedInput" not in hs, "a stale receipt must not inject"
     assert "NORECEIPT" in log and "PASS" not in log
 
 
 @case
-def test_claire_typed_no_sentinel_reminds():
+def test_claire_typed_no_sentinel_blocks_by_default():
     """BUG GUARDED: a claire adversarial dispatch with NO nonce at all (de-priming skipped)
-    must not pass silently — the gate reminds to run the leak-audit."""
+    must not pass — since >=0.12.0 the default BLOCKS (deny) rather than reminding, because
+    the report queue showed orchestrators treating a REMIND warning as licence to skip."""
     out, log = run_gate(_dispatch("claire:failure-mode-attacker",
                                   "Attack this rollout plan and find failure modes."))
-    assert out.strip(), "claire-typed no-nonce must remind"
     hs = _hook_out(out)
+    assert hs.get("permissionDecision") == "deny", "claire-typed no-nonce must DENY by default"
     assert "updatedInput" not in hs
-    assert "REMIND" in log
+    assert "REMIND" in log and "BLOCK" in log
+
+
+@case
+def test_soft_mode_warns_instead_of_blocking():
+    """BUG GUARDED: the escape hatch is gone or inverted. CLAIRE_GATE_STRICT=0 must soften both
+    failure states back to an advisory additionalContext warning (the dispatch proceeds), for an
+    install that hits a false block. Covers the NORECEIPT path; REMIND shares the branch."""
+    out, log = run_gate(
+        _dispatch("claire:failure-mode-attacker", "[CLAIRE-RECEIPT:nope] attack this"),
+        env={"CLAIRE_GATE_STRICT": "0"})
+    hs = _hook_out(out)
+    assert hs.get("permissionDecision") != "deny", "soft mode must NOT deny"
+    assert "additionalContext" in hs, "soft mode must warn via additionalContext"
+    assert "NORECEIPT" in log and "BLOCK" not in log
 
 
 # --- silence on non-depriming dispatches ----------------------------------------
@@ -209,29 +225,28 @@ def test_bare_same_named_agent_not_gated():
     assert log.strip() == ""
 
 
-# --- phrase-net backstop: REMIND only, never inject -----------------------------
+# --- no keyword detection (phrase-net removed >=0.12.0) --------------------------
 
 @case
-def test_phrase_net_reminds_but_cannot_inject():
-    """BUG GUARDED: the phrase-net backstop (for a dispatch whose agent-type is missing but
-    whose prompt reads adversarial) must still fire — as a REMIND. It carries no nonce, so it
-    can NEVER inject; it only nudges."""
+def test_keyword_phrasing_alone_is_silent():
+    """BUG GUARDED (regression on the keyword-net removal): the gate must NOT detect a dispatch
+    from prompt wording. A bare dispatch whose prompt reads adversarial ("devil's advocate") but
+    carries no claire: agent type and no nonce must pass SILENTLY — keyword matching is gone, and
+    block-by-default makes a keyword false-positive a hard block we will not risk."""
     out, log = run_gate({"tool_input": {"prompt": "Play devil's advocate against this conclusion."}})
-    assert out.strip(), "devil's-advocate phrasing must trigger a reminder"
-    hs = _hook_out(out)
-    assert "updatedInput" not in hs, "the phrase-net must never inject"
-    assert "REMIND" in log
+    assert out.strip() == "", "keyword phrasing alone must NOT be detected — no stdout"
+    assert log.strip() == "", "keyword phrasing alone must NOT be detected — no log line"
 
 
 @case
-def test_deprimed_word_does_not_false_trigger():
-    """BUG GUARDED: 'deprime' matched inside 'deprimed', falsely flagging an ordinary dispatch
-    that merely discusses de-priming. A non-adversarial agent whose prompt contains 'deprimed'
-    must pass silently."""
+def test_adversarial_keywords_on_generic_agent_silent():
+    """BUG GUARDED: a critique routed through a generic agent type with steel-man / de-prime
+    wording must pass silently. The gate guards Claire's OWN named critics, not the act of
+    seeking criticism — and must never block unrelated work on a word match."""
     out, log = run_gate(_dispatch(
         "general-purpose",
-        "Summarise how the deprimed brief flows through the pipeline."))
-    assert out.strip() == "", "a 'deprimed' mention must not trip the gate"
+        "Steel-man the opposing view, then de-prime your own and summarise the deprimed brief."))
+    assert out.strip() == "", "adversarial keywords on a generic agent must not trip the gate"
     assert log.strip() == ""
 
 
@@ -388,13 +403,15 @@ def test_inject_preserves_required_dispatch_fields():
 
 @case
 def test_no_tag_machinery_remains():
-    """BUG GUARDED (redesign hygiene): the old fingerprint machinery is deleted. The gate
-    source must no longer reference the removed [DEPRIMED-BRIEF] tag or the fingerprint
-    functions — their presence would mean a half-done migration."""
+    """BUG GUARDED (redesign hygiene): the old fingerprint machinery AND the removed keyword
+    net are deleted. The gate source must no longer reference the [DEPRIMED-BRIEF] tag, the
+    fingerprint functions, or the phrase-net constants — their presence would mean a half-done
+    migration (and a lingering keyword match would re-open the false-positive block risk)."""
     with open(GATE) as fh:
         src = fh.read()
-    for dead in ("[DEPRIMED-BRIEF]", "strip_coda", "brief_region", "has_matching_receipt"):
-        assert dead not in src, "dead fingerprint machinery still present: %s" % dead
+    for dead in ("[DEPRIMED-BRIEF]", "strip_coda", "brief_region", "has_matching_receipt",
+                 "ADVERSARIAL_PHRASES", "ADVERSARIAL_PHRASE_RE", "is_phrase"):
+        assert dead not in src, "dead machinery still present: %s" % dead
 
 
 if __name__ == "__main__":

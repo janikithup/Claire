@@ -120,7 +120,8 @@ def test_wrong_nonce_fails_closed():
                                         "prompt": "[CLAIRE-RECEIPT:wrongnonce] attack this"}})
         hs = json.loads(out)["hookSpecificOutput"]
         assert "updatedInput" not in hs, "a wrong nonce must not inject"
-        assert "CLAIRE GATE" in hs["additionalContext"]
+        assert hs.get("permissionDecision") == "deny", "a wrong nonce must DENY by default"
+        assert "CLAIRE GATE" in hs["permissionDecisionReason"]
 
 
 @case
@@ -139,7 +140,9 @@ def test_leaning_audit_writes_no_receipt_so_dispatch_fails_closed():
                         {"tool_input": {"subagent_type": "claire:failure-mode-attacker",
                                         "prompt": "[CLAIRE-RECEIPT:h0004] attack this"}})
         hs = json.loads(out)["hookSpecificOutput"]
-        assert "updatedInput" not in hs and "CLAIRE GATE" in hs["additionalContext"]
+        assert "updatedInput" not in hs, "a leaning (no-receipt) nonce must not inject"
+        assert hs.get("permissionDecision") == "deny", "no receipt must DENY by default"
+        assert "CLAIRE GATE" in hs["permissionDecisionReason"]
 
 
 if __name__ == "__main__":

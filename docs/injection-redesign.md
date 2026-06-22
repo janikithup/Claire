@@ -1,5 +1,9 @@
 # De-priming gate redesign: injection, not fingerprint-matching
 
+> **This is the design history.** For how the gate behaves *now* (block-by-default,
+> exact-identity detection, the modes), see `docs/enforcement.md` — this file records
+> why the injection design replaced fingerprint-matching, not the current defaults.
+
 Status: **DESIGN v2 — confirm #1 GREEN (2026-06-20); build unblocked.** Supersedes
 the fingerprint-matching gate for the next minor (≥ 0.8.0). Sprint kickoff:
 `issues/2026-06-20_1424_matching-machinery-redesign-hook-injection.md`.

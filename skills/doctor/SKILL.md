@@ -36,8 +36,11 @@ need fixing.
 ## Step 2 — Live self-test (does enforcement actually fire here?)
 
 This is the check the script cannot do. It verifies that the de-priming *receipt*
-mechanism works on this machine — which is what tells you whether strict mode is
-safe to enable.
+mechanism works on this machine. Since the gate now BLOCKS by default (>=0.12.0),
+this is no longer "is it safe to turn strict on" — strict is already on. The question
+is whether enforcement fires end to end, because if receipts are NOT being written or
+delivered here, block-by-default DENIES every audited dispatch — so a broken machine
+needs the escape hatch (`CLAIRE_GATE_STRICT=0`), not a flag turned on.
 
 1. Note the current moment, and list any existing receipts: `ls -t "<plugin-root>/hooks/.receipts/" 2>/dev/null`.
 2. Pick any short receipt id (e.g. `doctor1`). Dispatch **`claire:brief-leak-auditor`**
@@ -124,7 +127,9 @@ the write-only check could not see it). So close the loop:
    - **Receipt written in Step 2 but NORECEIPT / empty brief here** → the inject half is broken on
      this machine. The usual cause is plugin versions removed or changed while the app was running,
      leaving the live hooks on a stale path. Tell the user to **restart the app and re-run
-     `/claire:doctor`**, and keep strict mode OFF until it clears.
+     `/claire:doctor`**. Because the gate blocks by default, a broken inject means audited
+     dispatches are DENIED meanwhile — so tell them to **export `CLAIRE_GATE_STRICT=0`** as a
+     stopgap if they need Claire usable before the restart clears it.
 
 ## Step 3 — Verdict
 
@@ -132,19 +137,23 @@ Tell the user, in plain language:
 
 - **If a fresh receipt appeared AND the Step 2b round-trip passed** (a `PASS` line plus a real
   read) → de-priming enforcement is live END TO END on this machine — written *and* delivered to
-  the critic — and **strict mode (`CLAIRE_GATE_STRICT=1`) is safe to enable** if they want hard
-  blocking. Say so.
+  the critic — and block-by-default is working correctly: a skipped audit hard-stops, a clean one
+  sails through. Nothing to change. Say so.
 - **If the receipt was written but the Step 2b round-trip did NOT inject** (NORECEIPT / empty
-  brief) → enforcement is half-working: receipts are recorded but not delivered, so the gate is not
-  actually de-priming critics. Tell the user to restart the app and re-run; keep strict OFF until
-  the round-trip passes.
-- **If no receipt appeared and the user declined to enable it** → Claire runs in
-  **warn-only** mode: the gate reminds on every critic dispatch but never goes silent,
-  and strict mode must stay OFF (it would hard-block every dispatch). That's a fine
-  default; note that `/claire:doctor` can switch on enforcement whenever they want.
-- **If no receipt appeared even though it IS registered** → something deeper is off
-  (e.g. the receipt writer can't read the verdict on this harness). Flag it as the one
-  thing to look into; the warn-only default is unaffected.
+  brief) → enforcement is half-working: receipts are recorded but not delivered. Under block-by-
+  default this means audited critic dispatches are being DENIED — Claire is partly locked out.
+  Tell the user to restart the app and re-run; as a stopgap to keep Claire usable meanwhile,
+  **export `CLAIRE_GATE_STRICT=0`** (softens to advisory) until the round-trip passes.
+- **If no receipt appeared (writer not registered, or the user declined to wire it)** → this is
+  now the DANGER case, not a soft default. With block-by-default and no receipts ever written,
+  the gate DENIES every audited critic dispatch — Claire cannot run a single critic. Tell the
+  user plainly: either **wire the writer in** (`setup-receipts.sh`, which `/claire:doctor` offers)
+  so enforcement works, **or export `CLAIRE_GATE_STRICT=0`** to soften the gate to warn-only so
+  Claire is usable. One of the two is required — doing neither leaves Claire locked out.
+- **If no receipt appeared even though it IS registered** → something deeper is off (e.g. the
+  receipt writer can't read the verdict on this harness). Under block-by-default this also locks
+  Claire out, so flag it as the one thing to look into AND give them the `CLAIRE_GATE_STRICT=0`
+  stopgap so they are not stuck while they investigate.
 - Roll up the filesystem FAILs/WARNs from Step 1 into one or two plain sentences
   (e.g. "you have Claire installed twice — keep one", or "your project has its own
   agents sharing Claire's names; that's fine, just informational").
